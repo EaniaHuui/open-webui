@@ -41,7 +41,31 @@
 	let APIKey = '';
 	let APIKeyCopied = false;
 	let profileImageInputElement: HTMLInputElement;
-	let sub2apiStatus: any = null;
+	type Sub2APIStatus = {
+		auth?: {
+			access_token?: string | null;
+			token_type?: string | null;
+			expires_in?: number | null;
+			last_login_at?: number | null;
+		};
+		profile?: {
+			linked?: boolean;
+			external_user_id?: string | number | null;
+			external_email?: string | null;
+			display_name?: string | null;
+			linked_at?: number | null;
+			last_profile_sync_at?: number | null;
+		};
+		key_cache?: {
+			selected_strategy?: string | null;
+			selected_key_id?: string | number | null;
+			selected_key_name?: string | null;
+			masked_key_hint?: string | null;
+			cached_api_key?: string | null;
+			last_key_sync_at?: number | null;
+		};
+	};
+	let sub2apiStatus: Sub2APIStatus | null = null;
 
 	const submitHandler = async () => {
 		if (name !== $user?.name) {
@@ -263,26 +287,26 @@
 					<div class="flex justify-between gap-4">
 						<span>{$i18n.t('Status')}</span>
 						<span class="text-right text-gray-900 dark:text-gray-100">
-							{sub2apiStatus?.linked ? $i18n.t('Linked') : $i18n.t('Not linked')}
+							{sub2apiStatus?.profile?.linked ? $i18n.t('Linked') : $i18n.t('Not linked')}
 						</span>
 					</div>
 					<div class="flex justify-between gap-4">
 						<span>{$i18n.t('Selection strategy')}</span>
 						<span class="text-right text-gray-900 dark:text-gray-100">
-							{sub2apiStatus?.selected_strategy ?? 'first'}
+							{sub2apiStatus?.key_cache?.selected_strategy ?? 'first'}
 						</span>
 					</div>
 					<div class="flex justify-between gap-4">
 						<span>{$i18n.t('Selected key')}</span>
 						<span class="text-right text-gray-900 dark:text-gray-100">
-							{sub2apiStatus?.masked_key_hint ?? $i18n.t('Not synced')}
+							{sub2apiStatus?.key_cache?.masked_key_hint ?? $i18n.t('Not synced')}
 						</span>
 					</div>
 					<div class="flex justify-between gap-4">
 						<span>{$i18n.t('Last sync')}</span>
 						<span class="text-right text-gray-900 dark:text-gray-100">
-							{sub2apiStatus?.last_key_sync_at
-								? new Date(sub2apiStatus.last_key_sync_at * 1000).toLocaleString()
+							{sub2apiStatus?.key_cache?.last_key_sync_at
+								? new Date(sub2apiStatus.key_cache.last_key_sync_at * 1000).toLocaleString()
 								: $i18n.t('Never')}
 						</span>
 					</div>

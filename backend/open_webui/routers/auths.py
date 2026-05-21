@@ -78,7 +78,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from open_webui.utils.webhook import post_webhook
 from open_webui.utils.access_control import get_permissions, has_permission
 from open_webui.utils.groups import apply_default_group_assignment
-from open_webui.utils.sub2api import Sub2APIClient, get_sub2api_info, link_sub2api_user
+from open_webui.utils.sub2api import (
+    Sub2APIClient,
+    get_sub2api_info,
+    link_sub2api_user,
+    update_sub2api_info,
+)
 
 from open_webui.utils.redis import get_redis_client
 from open_webui.utils.rate_limit import RateLimiter
@@ -135,22 +140,23 @@ async def delegated_sub2api_signin(
         db=db,
     )
 
-    sub2api_info = get_sub2api_info(linked_user or user)
-    sub2api_info = {
-        **sub2api_info,
-        'access_token': access_token,
-        'token_type': login_payload.get('token_type', 'Bearer'),
-        'expires_in': login_payload.get('expires_in'),
-        'last_login_at': int(time.time()),
-    }
+    current_user = linked_user or user
+    sub2api_info = get_sub2api_info(current_user)
 
-    refreshed_user = await Users.update_user_by_id(
-        user.id,
-        {'info': {**((linked_user or user).info or {}), 'sub2api': sub2api_info}},
+    refreshed_user = await update_sub2api_info(
+        current_user.id,
+        {
+            'auth': {
+                'access_token': access_token,
+                'token_type': login_payload.get('token_type', sub2api_info['auth'].get('token_type') or 'Bearer'),
+                'expires_in': login_payload.get('expires_in'),
+                'last_login_at': int(time.time()),
+            }
+        },
         db=db,
     )
 
-    return refreshed_user or linked_user or user
+    return refreshed_user or current_user
 
 
 async def create_session_response(
