@@ -134,6 +134,13 @@ from open_webui.config import (
     OPENAI_API_BASE_URLS,
     OPENAI_API_KEYS,
     OPENAI_API_CONFIGS,
+    SUB2API_AUTH_ENABLED,
+    SUB2API_BASE_URL,
+    SUB2API_OPENAI_BASE_URL,
+    SUB2API_KEY_SELECTION_STRATEGY,
+    SUB2API_AUTO_CREATE_KEY,
+    SUB2API_AUTO_CREATE_KEY_NAME,
+    SUB2API_REQUEST_TIMEOUT,
     # Direct Connections
     ENABLE_DIRECT_CONNECTIONS,
     # Model list
@@ -822,6 +829,13 @@ app.state.config.ENABLE_OPENAI_API = ENABLE_OPENAI_API
 app.state.config.OPENAI_API_BASE_URLS = OPENAI_API_BASE_URLS
 app.state.config.OPENAI_API_KEYS = OPENAI_API_KEYS
 app.state.config.OPENAI_API_CONFIGS = OPENAI_API_CONFIGS
+app.state.config.SUB2API_AUTH_ENABLED = SUB2API_AUTH_ENABLED
+app.state.config.SUB2API_BASE_URL = SUB2API_BASE_URL
+app.state.config.SUB2API_OPENAI_BASE_URL = SUB2API_OPENAI_BASE_URL
+app.state.config.SUB2API_KEY_SELECTION_STRATEGY = SUB2API_KEY_SELECTION_STRATEGY
+app.state.config.SUB2API_AUTO_CREATE_KEY = SUB2API_AUTO_CREATE_KEY
+app.state.config.SUB2API_AUTO_CREATE_KEY_NAME = SUB2API_AUTO_CREATE_KEY_NAME
+app.state.config.SUB2API_REQUEST_TIMEOUT = SUB2API_REQUEST_TIMEOUT
 
 app.state.OPENAI_MODELS = {}
 
@@ -2363,6 +2377,7 @@ async def get_app_config(request: Request):
             'enable_signup': app.state.config.ENABLE_SIGNUP,
             'enable_login_form': app.state.config.ENABLE_LOGIN_FORM,
             'enable_password_change_form': app.state.config.ENABLE_PASSWORD_CHANGE_FORM,
+            'sub2api_auth_enabled': app.state.config.SUB2API_AUTH_ENABLED,
             'enable_websocket': ENABLE_WEBSOCKET_SUPPORT,
             'enable_version_update_check': ENABLE_VERSION_UPDATE_CHECK,
             'enable_public_active_users_count': ENABLE_PUBLIC_ACTIVE_USERS_COUNT,

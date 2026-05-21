@@ -260,6 +260,8 @@
 											{$i18n.t(`Get started with {{WEBUI_NAME}}`, { WEBUI_NAME: $WEBUI_NAME })}
 										{:else if mode === 'ldap'}
 											{$i18n.t(`Sign in to {{WEBUI_NAME}} with LDAP`, { WEBUI_NAME: $WEBUI_NAME })}
+										{:else if mode === 'signin' && ($config?.features?.sub2api_auth_enabled ?? false)}
+											{$i18n.t(`Sign in to {{WEBUI_NAME}} with your sub2api account`, { WEBUI_NAME: $WEBUI_NAME })}
 										{:else if mode === 'signin'}
 											{$i18n.t(`Sign in to {{WEBUI_NAME}}`, { WEBUI_NAME: $WEBUI_NAME })}
 										{:else}
@@ -273,6 +275,12 @@
 											{$i18n.t(
 												'does not make any external connections, and your data stays securely on your locally hosted server.'
 											)}
+										</div>
+									{/if}
+
+									{#if mode === 'signin' && ($config?.features?.sub2api_auth_enabled ?? false)}
+										<div class="mt-1 text-xs text-gray-500 dark:text-gray-400 text-left">
+											{$i18n.t('Use your existing sub2api email and password. Your requests will use your own sub2api API key after sign-in.')}
 										</div>
 									{/if}
 								</div>

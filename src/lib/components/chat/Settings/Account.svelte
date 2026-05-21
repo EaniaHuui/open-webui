@@ -4,6 +4,7 @@
 
 	import { user, config, settings } from '$lib/stores';
 	import { updateUserProfile, createAPIKey, getAPIKey, getSessionUser } from '$lib/apis/auths';
+	import { getUserInfo } from '$lib/apis/users';
 	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import UpdatePassword from './Account/UpdatePassword.svelte';
@@ -40,6 +41,7 @@
 	let APIKey = '';
 	let APIKeyCopied = false;
 	let profileImageInputElement: HTMLInputElement;
+	let sub2apiStatus: any = null;
 
 	const submitHandler = async () => {
 		if (name !== $user?.name) {
@@ -104,6 +106,12 @@
 			gender = _gender;
 
 			dateOfBirth = user?.date_of_birth ?? '';
+
+			const info = await getUserInfo(localStorage.token).catch((error) => {
+				console.log(error);
+				return null;
+			});
+			sub2apiStatus = info?.sub2api ?? null;
 		}
 
 		webhookUrl = $settings?.notifications?.webhook_url ?? '';
@@ -247,6 +255,40 @@
 		{/if}
 
 		<hr class="border-gray-50 dark:border-gray-850/30 my-4" />
+
+		{#if $config?.features?.sub2api_auth_enabled ?? false}
+			<div class="mt-2 rounded-2xl border border-gray-100 dark:border-gray-800 p-4">
+				<div class="text-sm font-medium">{$i18n.t('sub2api Connection')}</div>
+				<div class="mt-3 space-y-2 text-xs text-gray-600 dark:text-gray-400">
+					<div class="flex justify-between gap-4">
+						<span>{$i18n.t('Status')}</span>
+						<span class="text-right text-gray-900 dark:text-gray-100">
+							{sub2apiStatus?.linked ? $i18n.t('Linked') : $i18n.t('Not linked')}
+						</span>
+					</div>
+					<div class="flex justify-between gap-4">
+						<span>{$i18n.t('Selection strategy')}</span>
+						<span class="text-right text-gray-900 dark:text-gray-100">
+							{sub2apiStatus?.selected_strategy ?? 'first'}
+						</span>
+					</div>
+					<div class="flex justify-between gap-4">
+						<span>{$i18n.t('Selected key')}</span>
+						<span class="text-right text-gray-900 dark:text-gray-100">
+							{sub2apiStatus?.masked_key_hint ?? $i18n.t('Not synced')}
+						</span>
+					</div>
+					<div class="flex justify-between gap-4">
+						<span>{$i18n.t('Last sync')}</span>
+						<span class="text-right text-gray-900 dark:text-gray-100">
+							{sub2apiStatus?.last_key_sync_at
+								? new Date(sub2apiStatus.last_key_sync_at * 1000).toLocaleString()
+								: $i18n.t('Never')}
+						</span>
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		{#if $config?.features.enable_login_form && $config?.features.enable_password_change_form}
 			<div class="mt-2">
