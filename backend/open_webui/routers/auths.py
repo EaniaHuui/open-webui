@@ -5,7 +5,6 @@ import time
 import datetime
 import logging
 from aiohttp import ClientSession
-import aiohttp
 import urllib
 
 
@@ -54,7 +53,6 @@ from open_webui.config import (
     ENABLE_PASSWORD_AUTH,
     OAUTH_PROVIDERS,
     OAUTH_MERGE_ACCOUNTS_BY_EMAIL,
-    SUB2API_AUTH_ENABLED,
 )
 from open_webui.utils.oauth import auth_manager_config
 from pydantic import BaseModel
@@ -78,7 +76,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from open_webui.utils.webhook import post_webhook
 from open_webui.utils.access_control import get_permissions, has_permission
 from open_webui.utils.groups import apply_default_group_assignment
-from open_webui.utils.sub2api import Sub2APIClient, get_sub2api_info, link_sub2api_user
 
 from open_webui.utils.redis import get_redis_client
 from open_webui.utils.rate_limit import RateLimiter
@@ -98,59 +95,6 @@ log = logging.getLogger(__name__)
 # Forgive us our failed attempts, as we forgive those
 # who exceed their allotted rate against this gate.
 signin_rate_limiter = RateLimiter(redis_client=get_redis_client(), limit=5 * 3, window=60 * 3)
-
-
-async def delegated_sub2api_signin(
-    request: Request,
-    form_data: SigninForm,
-    *,
-    db: AsyncSession,
-) -> Optional[UserModel]:
-    client = Sub2APIClient(
-        base_url=request.app.state.config.SUB2API_BASE_URL,
-        timeout=request.app.state.config.SUB2API_REQUEST_TIMEOUT,
-    )
-
-    login_payload = await client.login(form_data.email.lower(), form_data.password)
-    access_token = login_payload.get('access_token')
-    profile = await client.get_current_user(access_token)
-
-    email = (profile.get('email') or form_data.email).lower()
-    display_name = profile.get('username') or email
-
-    user = await Users.get_user_by_email(email, db=db)
-    if not user:
-        user = await signup_handler(
-            request,
-            email,
-            str(uuid.uuid4()),
-            display_name,
-            db=db,
-        )
-
-    linked_user = await link_sub2api_user(
-        user,
-        {**profile, 'email': email, 'username': display_name},
-        strategy=request.app.state.config.SUB2API_KEY_SELECTION_STRATEGY,
-        db=db,
-    )
-
-    sub2api_info = get_sub2api_info(linked_user or user)
-    sub2api_info = {
-        **sub2api_info,
-        'access_token': access_token,
-        'token_type': login_payload.get('token_type', 'Bearer'),
-        'expires_in': login_payload.get('expires_in'),
-        'last_login_at': int(time.time()),
-    }
-
-    refreshed_user = await Users.update_user_by_id(
-        user.id,
-        {'info': {**((linked_user or user).info or {}), 'sub2api': sub2api_info}},
-        db=db,
-    )
-
-    return refreshed_user or linked_user or user
 
 
 async def create_session_response(
@@ -710,23 +654,20 @@ async def signin(
                 detail=ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
             )
 
-        if request.app.state.config.SUB2API_AUTH_ENABLED:
-            user = await delegated_sub2api_signin(request, form_data, db=db)
-        else:
-            password_bytes = form_data.password.encode('utf-8')
-            if len(password_bytes) > 72:
-                # TODO: Implement other hashing algorithms that support longer passwords
-                log.info('Password too long, truncating to 72 bytes for bcrypt')
-                password_bytes = password_bytes[:72]
+        password_bytes = form_data.password.encode('utf-8')
+        if len(password_bytes) > 72:
+            # TODO: Implement other hashing algorithms that support longer passwords
+            log.info('Password too long, truncating to 72 bytes for bcrypt')
+            password_bytes = password_bytes[:72]
 
-                # decode safely — ignore incomplete UTF-8 sequences
-                form_data.password = password_bytes.decode('utf-8', errors='ignore')
+            # decode safely — ignore incomplete UTF-8 sequences
+            form_data.password = password_bytes.decode('utf-8', errors='ignore')
 
-            user = await Auths.authenticate_user(
-                form_data.email.lower(),
-                lambda pw: verify_password(form_data.password, pw),
-                db=db,
-            )
+        user = await Auths.authenticate_user(
+            form_data.email.lower(),
+            lambda pw: verify_password(form_data.password, pw),
+            db=db,
+        )
 
     if user:
         return await create_session_response(request, user, db, response, set_cookie=True)

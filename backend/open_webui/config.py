@@ -34,7 +34,6 @@ from open_webui.env import (
     WEBUI_AUTH,
     WEBUI_FAVICON_URL,
     WEBUI_NAME,
-    WEBUI_SECRET_KEY,
     log,
 )
 from open_webui.internal.db import Base, get_db, get_async_db
@@ -1171,50 +1170,6 @@ OPENAI_API_CONFIGS = PersistentConfig(
     'openai.api_configs',
     {},
 )
-
-SUB2API_AUTH_ENABLED = PersistentConfig(
-    'SUB2API_AUTH_ENABLED',
-    'sub2api.auth_enabled',
-    os.environ.get('SUB2API_AUTH_ENABLED', 'False').lower() == 'true',
-)
-
-SUB2API_BASE_URL = PersistentConfig(
-    'SUB2API_BASE_URL',
-    'sub2api.base_url',
-    os.environ.get('SUB2API_BASE_URL', '').rstrip('/'),
-)
-
-SUB2API_OPENAI_BASE_URL = PersistentConfig(
-    'SUB2API_OPENAI_BASE_URL',
-    'sub2api.openai_base_url',
-    os.environ.get('SUB2API_OPENAI_BASE_URL', '').rstrip('/'),
-)
-
-SUB2API_KEY_SELECTION_STRATEGY = PersistentConfig(
-    'SUB2API_KEY_SELECTION_STRATEGY',
-    'sub2api.key_selection_strategy',
-    os.environ.get('SUB2API_KEY_SELECTION_STRATEGY', 'first'),
-)
-
-SUB2API_AUTO_CREATE_KEY = PersistentConfig(
-    'SUB2API_AUTO_CREATE_KEY',
-    'sub2api.auto_create_key',
-    os.environ.get('SUB2API_AUTO_CREATE_KEY', 'True').lower() == 'true',
-)
-
-SUB2API_AUTO_CREATE_KEY_NAME = PersistentConfig(
-    'SUB2API_AUTO_CREATE_KEY_NAME',
-    'sub2api.auto_create_key_name',
-    os.environ.get('SUB2API_AUTO_CREATE_KEY_NAME', 'Open WebUI'),
-)
-
-SUB2API_REQUEST_TIMEOUT = PersistentConfig(
-    'SUB2API_REQUEST_TIMEOUT',
-    'sub2api.request_timeout',
-    int(os.environ.get('SUB2API_REQUEST_TIMEOUT', '15')),
-)
-
-SUB2API_API_KEY_ENCRYPTION_KEY = os.environ.get('SUB2API_API_KEY_ENCRYPTION_KEY', WEBUI_SECRET_KEY)
 
 # Get the actual OpenAI API key based on the base URL
 OPENAI_API_KEY = ''
