@@ -34,6 +34,7 @@ from open_webui.env import (
     WEBUI_AUTH,
     WEBUI_FAVICON_URL,
     WEBUI_NAME,
+    WEBUI_SECRET_KEY,
     log,
 )
 from open_webui.internal.db import Base, get_db, get_async_db
@@ -1170,6 +1171,30 @@ OPENAI_API_CONFIGS = PersistentConfig(
     'openai.api_configs',
     {},
 )
+
+####################################
+# SUB2API
+####################################
+
+SUB2API_AUTH_ENABLED = PersistentConfig(
+    'SUB2API_AUTH_ENABLED',
+    'sub2api.auth_enabled',
+    os.environ.get('SUB2API_AUTH_ENABLED', 'False').lower() == 'true',
+)
+
+SUB2API_BASE_URL = PersistentConfig(
+    'SUB2API_BASE_URL',
+    'sub2api.base_url',
+    os.environ.get('SUB2API_BASE_URL', '').rstrip('/'),
+)
+
+SUB2API_REQUEST_TIMEOUT = PersistentConfig(
+    'SUB2API_REQUEST_TIMEOUT',
+    'sub2api.request_timeout',
+    int(os.environ.get('SUB2API_REQUEST_TIMEOUT', '15')),
+)
+
+SUB2API_API_KEY_ENCRYPTION_KEY = os.environ.get('SUB2API_API_KEY_ENCRYPTION_KEY', WEBUI_SECRET_KEY)
 
 # Get the actual OpenAI API key based on the base URL
 OPENAI_API_KEY = ''

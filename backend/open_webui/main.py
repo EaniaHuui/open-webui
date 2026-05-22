@@ -134,6 +134,10 @@ from open_webui.config import (
     OPENAI_API_BASE_URLS,
     OPENAI_API_KEYS,
     OPENAI_API_CONFIGS,
+    # Sub2API
+    SUB2API_AUTH_ENABLED,
+    SUB2API_BASE_URL,
+    SUB2API_REQUEST_TIMEOUT,
     # Direct Connections
     ENABLE_DIRECT_CONNECTIONS,
     # Model list
@@ -822,6 +826,10 @@ app.state.config.ENABLE_OPENAI_API = ENABLE_OPENAI_API
 app.state.config.OPENAI_API_BASE_URLS = OPENAI_API_BASE_URLS
 app.state.config.OPENAI_API_KEYS = OPENAI_API_KEYS
 app.state.config.OPENAI_API_CONFIGS = OPENAI_API_CONFIGS
+
+app.state.config.SUB2API_AUTH_ENABLED = SUB2API_AUTH_ENABLED
+app.state.config.SUB2API_BASE_URL = SUB2API_BASE_URL
+app.state.config.SUB2API_REQUEST_TIMEOUT = SUB2API_REQUEST_TIMEOUT
 
 app.state.OPENAI_MODELS = {}
 
@@ -1524,6 +1532,14 @@ async def get_models(request: Request, refresh: bool = False, user=Depends(get_v
         )
 
     models = await get_filtered_models(models, user)
+
+    # Sub2API models bypass access control — they are fetched with the
+    # user's own API key and are inherently authorized by the upstream
+    # server.  Re-add any that were filtered out.
+    filtered_ids = {m['id'] for m in models}
+    for m in all_models:
+        if m.get('provider') == 'sub2api' and m['id'] not in filtered_ids:
+            models.append(m)
 
     log.debug(
         f'/api/models returned filtered models accessible to the user: {json.dumps([model.get("id") for model in models])}'
@@ -2367,6 +2383,7 @@ async def get_app_config(request: Request):
             'enable_version_update_check': ENABLE_VERSION_UPDATE_CHECK,
             'enable_public_active_users_count': ENABLE_PUBLIC_ACTIVE_USERS_COUNT,
             'enable_easter_eggs': ENABLE_EASTER_EGGS,
+            'sub2api_auth_enabled': app.state.config.SUB2API_AUTH_ENABLED,
             **(
                 {
                     'enable_direct_connections': app.state.config.ENABLE_DIRECT_CONNECTIONS,

@@ -385,6 +385,10 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
 
 
 async def check_model_access(user, model, db=None):
+    # Sub2API models bypass access control — they are authorized by the upstream server
+    if model.get('provider') == 'sub2api':
+        return
+
     if model.get('arena'):
         meta = model.get('info', {}).get('meta', {})
         access_grants = meta.get('access_grants', [])
@@ -443,6 +447,11 @@ async def get_filtered_models(models, user, db=None):
 
         filtered_models = []
         for model in models:
+            # Sub2API models bypass access control — they are authorized by the upstream server
+            if model.get('provider') == 'sub2api':
+                filtered_models.append(model)
+                continue
+
             if model.get('arena'):
                 meta = model.get('info', {}).get('meta', {})
                 access_grants = meta.get('access_grants', [])

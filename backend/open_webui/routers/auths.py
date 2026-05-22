@@ -654,20 +654,56 @@ async def signin(
                 detail=ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
             )
 
-        password_bytes = form_data.password.encode('utf-8')
-        if len(password_bytes) > 72:
-            # TODO: Implement other hashing algorithms that support longer passwords
-            log.info('Password too long, truncating to 72 bytes for bcrypt')
-            password_bytes = password_bytes[:72]
+        # Sub2API delegated auth — try first if enabled
+        user = None
+        if request.app.state.config.SUB2API_AUTH_ENABLED:
+            try:
+                from open_webui.utils.sub2api import (
+                    Sub2APIClient,
+                    get_sub2api_info,
+                    update_sub2api_info,
+                )
 
-            # decode safely — ignore incomplete UTF-8 sequences
-            form_data.password = password_bytes.decode('utf-8', errors='ignore')
+                client = Sub2APIClient(
+                    base_url=request.app.state.config.SUB2API_BASE_URL,
+                    timeout=request.app.state.config.SUB2API_REQUEST_TIMEOUT,
+                )
+                login_payload = await client.login(form_data.email.lower(), form_data.password)
+                access_token = login_payload.get("access_token")
+                profile = await client.get_current_user(access_token)
 
-        user = await Auths.authenticate_user(
-            form_data.email.lower(),
-            lambda pw: verify_password(form_data.password, pw),
-            db=db,
-        )
+                email = (profile.get("email") or form_data.email).lower()
+                display_name = profile.get("username") or email
+
+                user = await Users.get_user_by_email(email, db=db)
+                if not user:
+                    user = await signup_handler(
+                        request, email, str(uuid.uuid4()), display_name, db=db,
+                    )
+
+                # Store Sub2API access token in user.info
+                await update_sub2api_info(user.id, {"access_token": access_token}, db=db)
+                user = await Users.get_user_by_id(user.id, db=db)
+            except HTTPException:
+                log.info(f"Sub2API login failed for {form_data.email}, falling back to local auth")
+                user = None
+
+        # Local password auth
+        if not user:
+            password_bytes = form_data.password.encode('utf-8')
+            if len(password_bytes) > 72:
+                # TODO: Implement other hashing algorithms that support longer passwords
+                log.info('Password too long, truncating to 72 bytes for bcrypt')
+                password_bytes = password_bytes[:72]
+
+                # decode safely — ignore incomplete UTF-8 sequences
+                form_data.password = password_bytes.decode('utf-8', errors='ignore')
+
+            user = await Auths.authenticate_user(
+                form_data.email.lower(),
+                lambda pw: verify_password(form_data.password, pw),
+                db=db,
+            )
 
     if user:
         return await create_session_response(request, user, db, response, set_cookie=True)

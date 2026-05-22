@@ -211,6 +211,15 @@ async def get_headers_and_cookies(
     elif auth_type in ('azure_ad', 'microsoft_entra_id'):
         token = get_microsoft_entra_id_access_token()
 
+    elif auth_type == 'sub2api' and user:
+        if key:
+            # Use explicitly provided key (e.g. from admin panel verification)
+            token = f'{key}'
+        else:
+            from open_webui.utils.sub2api import resolve_sub2api_api_key
+
+            token = await resolve_sub2api_api_key(request, user)
+
     if token:
         headers['Authorization'] = f'Bearer {token}'
 
@@ -409,6 +418,7 @@ async def get_all_models_responses(request: Request, user: UserModel) -> list:
                 if len(model_ids) == 0:
                     request_tasks.append(get_models_request(request, url, api_keys[idx], user=user, config=api_config))
                 else:
+                    provider = api_config.get('provider', '')
                     model_list = {
                         'object': 'list',
                         'data': [
@@ -418,6 +428,7 @@ async def get_all_models_responses(request: Request, user: UserModel) -> list:
                                 'owned_by': 'openai',
                                 'openai': {'id': model_id},
                                 'urlIdx': idx,
+                                'provider': provider,
                             }
                             for model_id in model_ids
                         ],
@@ -1103,6 +1114,18 @@ async def generate_chat_completion(
     model_id = form_data.get('model')
     model_info = await Models.get_model_by_id(model_id)
 
+    # Resolve model early to check provider for access-control bypass
+    openai_models = request.app.state.OPENAI_MODELS
+    if not openai_models or model_id not in openai_models:
+        await get_all_models(request, user=user)
+        openai_models = request.app.state.OPENAI_MODELS
+    openai_model = openai_models.get(model_id)
+
+    # Sub2API models are fetched with the user's own key and are inherently
+    # authorized by the upstream server — bypass DB-based access control.
+    if openai_model and openai_model.get('provider') == 'sub2api':
+        bypass_filter = True
+
     # Check model info and override the payload
     if model_info:
         if model_info.base_model_id:
@@ -1125,15 +1148,8 @@ async def generate_chat_completion(
     else:
         await check_model_access(user, None, bypass_filter)
 
-    # Check if model is already in app state cache to avoid expensive get_all_models() call
-    models = request.app.state.OPENAI_MODELS
-    if not models or model_id not in models:
-        await get_all_models(request, user=user)
-        models = request.app.state.OPENAI_MODELS
-    model = models.get(model_id)
-
-    if model:
-        idx = model['urlIdx']
+    if openai_model:
+        idx = openai_model['urlIdx']
     else:
         raise HTTPException(
             status_code=404,
@@ -1153,7 +1169,7 @@ async def generate_chat_completion(
         payload['model'] = payload['model'].replace(f'{prefix_id}.', '')
 
     # Add user info to the payload if the model is a pipeline
-    if 'pipeline' in model and model.get('pipeline'):
+    if 'pipeline' in openai_model and openai_model.get('pipeline'):
         payload['user'] = {
             'name': user.name,
             'id': user.id,
@@ -1418,18 +1434,23 @@ async def responses(
     idx = 0
     model_id = form_data.model
 
+    # Sub2API models bypass access control
+    bypass = BYPASS_MODEL_ACCESS_CONTROL
+    openai_models = request.app.state.OPENAI_MODELS
+    if not openai_models or model_id not in openai_models:
+        await get_all_models(request, user=user)
+        openai_models = request.app.state.OPENAI_MODELS
+    openai_model = openai_models.get(model_id)
+    if openai_model and openai_model.get('provider') == 'sub2api':
+        bypass = True
+
     # Enforce per-model access control
-    await check_model_access(user, await Models.get_model_by_id(model_id), BYPASS_MODEL_ACCESS_CONTROL)
+    await check_model_access(user, await Models.get_model_by_id(model_id), bypass)
 
     body = json.dumps(payload)
 
-    if model_id:
-        models = request.app.state.OPENAI_MODELS
-        if not models or model_id not in models:
-            await get_all_models(request, user=user)
-            models = request.app.state.OPENAI_MODELS
-        if model_id in models:
-            idx = models[model_id]['urlIdx']
+    if openai_model:
+        idx = openai_model['urlIdx']
 
     url = request.app.state.config.OPENAI_API_BASE_URLS[idx]
     key = request.app.state.config.OPENAI_API_KEYS[idx]

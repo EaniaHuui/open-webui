@@ -78,6 +78,22 @@
 		// remove trailing slash from url
 		url = url.replace(/\/$/, '');
 
+		// Validate required fields
+		if (!url) {
+			toast.error($i18n.t('Please enter the API Base URL first'));
+			return;
+		}
+
+		if (auth_type === 'sub2api' && !key) {
+			toast.error($i18n.t('Please enter the API Key first'));
+			return;
+		}
+
+		if (auth_type === 'bearer' && !key) {
+			toast.error($i18n.t('Please enter the API Key first'));
+			return;
+		}
+
 		let _headers = null;
 
 		if (headers) {
@@ -89,11 +105,12 @@
 				}
 				headers = JSON.stringify(_headers, null, 2);
 			} catch (error) {
-				toast.error($i18n.t('Headers must be a valid JSON object'));
+				toast.error($i18n.t('Headers format is incorrect, please check your JSON'));
 				return;
 			}
 		}
 
+		let errorMessage = '';
 		const res = await verifyOpenAIConnection(
 			localStorage.token,
 			{
@@ -108,11 +125,44 @@
 			},
 			direct
 		).catch((error) => {
-			toast.error(`${error}`);
+			const errStr = `${error}`;
+			// Convert common error messages to friendly Chinese messages
+			if (errStr.includes('InvalidApiKey') || errStr.includes('invalid_api_key') || errStr.includes('API key')) {
+				errorMessage = $i18n.t('API Key is incorrect, please check and try again');
+			} else if (errStr.includes('ENOTFOUND') || errStr.includes('ECONNREFUSED') || errStr.includes('fetch')) {
+				errorMessage = $i18n.t('Cannot connect to the server, please check the URL and network');
+			} else if (errStr.includes('401') || errStr.includes('unauthorized')) {
+				errorMessage = $i18n.t('Authentication failed, please check the API Key');
+			} else if (errStr.includes('403')) {
+				errorMessage = $i18n.t('Access denied, please check your permissions');
+			} else if (errStr.includes('timeout') || errStr.includes('ETIMEDOUT')) {
+				errorMessage = $i18n.t('Connection timed out, please try again later');
+			} else if (errStr.includes('not linked') || errStr.includes('Sub2API')) {
+				errorMessage = $i18n.t('Sub2API account is not linked or authentication failed');
+			} else {
+				errorMessage = $i18n.t('Connection failed') + ': ' + errStr.substring(0, 100);
+			}
+			toast.error(errorMessage);
 		});
 
 		if (res) {
-			toast.success($i18n.t('Server connection verified'));
+			toast.success($i18n.t('Connection successful, fetching models...'));
+			// Extract model IDs from response and add to the editable list
+			let newModels: string[] = [];
+			if (Array.isArray(res)) {
+				newModels = res.map((m: any) => m.id ?? m);
+			} else if (res?.data && Array.isArray(res.data)) {
+				newModels = res.data.map((m: any) => m.id ?? m);
+			} else if (res?.models && Array.isArray(res.models)) {
+				newModels = res.models;
+			}
+			if (newModels.length === 0) {
+				toast.warning($i18n.t('Connection successful but no models found'));
+			} else {
+				// Replace modelIds with the fetched ones (deduplicated)
+				modelIds = [...new Set(newModels)];
+				toast.success($i18n.t('Fetched {{count}} models', { count: newModels.length }));
+			}
 		}
 	};
 
@@ -333,31 +383,6 @@
 								</div>
 							</div>
 
-							<Tooltip content={$i18n.t('Verify Connection')} className="self-end -mb-1">
-								<button
-									class="self-center p-1 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-850 rounded-lg transition"
-									on:click={() => {
-										verifyHandler();
-									}}
-									type="button"
-									aria-label={$i18n.t('Verify Connection')}
-								>
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										viewBox="0 0 20 20"
-										fill="currentColor"
-										aria-hidden="true"
-										class="w-4 h-4"
-									>
-										<path
-											fill-rule="evenodd"
-											d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z"
-											clip-rule="evenodd"
-										/>
-									</svg>
-								</button>
-							</Tooltip>
-
 							<div class="flex flex-col shrink-0 self-end">
 								<label class="sr-only" for="toggle-connection"
 									>{$i18n.t('Toggle whether current connection is active.')}</label
@@ -388,6 +413,7 @@
 
 											{#if !ollama}
 												<option value="session">{$i18n.t('Session')}</option>
+												<option value="sub2api">{$i18n.t('Sub2API')}</option>
 												{#if !direct}
 													<option value="system_oauth">{$i18n.t('OAuth')}</option>
 													{#if azure}
@@ -422,6 +448,19 @@
 												class={`text-xs self-center translate-y-[1px] ${($settings?.highContrastMode ?? false) ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500'}`}
 											>
 												{$i18n.t('Forwards system user OAuth access token to authenticate')}
+											</div>
+										{:else if auth_type === 'sub2api'}
+											<div class="flex flex-col gap-1 w-full">
+												<div
+													class={`text-xs self-center translate-y-[1px] ${($settings?.highContrastMode ?? false) ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500'}`}
+												>
+													{$i18n.t("Uses each user's personal Sub2API API key for chat. Enter a key below for model listing.")}
+												</div>
+												<SensitiveInput
+													bind:value={key}
+													placeholder={$i18n.t('API Key (for model listing)')}
+													required={false}
+												/>
 											</div>
 										{:else if ['azure_ad', 'microsoft_entra_id'].includes(auth_type)}
 											<div
@@ -492,7 +531,7 @@
 							</div>
 						</div>
 
-						{#if !ollama && !direct}
+						{#if !ollama}
 							<div class="flex flex-row justify-between items-center w-full mt-2">
 								<label
 									for="provider-select"
@@ -510,6 +549,7 @@
 										<option value="">{$i18n.t('Default')}</option>
 										<option value="azure">{$i18n.t('Azure OpenAI')}</option>
 										<option value="llama.cpp">{$i18n.t('llama.cpp')}</option>
+										<option value="sub2api">{$i18n.t('Sub2API')}</option>
 									</select>
 								</div>
 							</div>
@@ -580,13 +620,24 @@
 						{/if}
 
 						<div class="flex flex-col w-full mt-2">
-							<div class="mb-1 flex justify-between">
+							<div class="mb-1 flex justify-between items-center">
 								<div
 									class={`mb-0.5 text-xs text-gray-500
 								${($settings?.highContrastMode ?? false) ? 'text-gray-800 dark:text-gray-100' : ''}`}
 								>
 									{$i18n.t('Model IDs')}
 								</div>
+								{#if !ollama}
+									<button
+										class="px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition"
+										on:click={() => {
+											verifyHandler();
+										}}
+										type="button"
+									>
+										{$i18n.t('Fetch Models')}
+									</button>
+								{/if}
 							</div>
 
 							{#if modelIds.length > 0}

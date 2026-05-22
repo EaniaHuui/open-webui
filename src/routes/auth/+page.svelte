@@ -277,6 +277,12 @@
 									{/if}
 								</div>
 
+								{#if $config?.features?.sub2api_auth_enabled && mode === 'signin'}
+									<div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+										{$i18n.t('Use your Sub2API account credentials. Your requests will use your own API key.')}
+									</div>
+								{/if}
+
 								{#if $config?.features.enable_login_form || $config?.features.enable_ldap || form}
 									<div class="flex flex-col mt-4">
 										{#if mode === 'signup'}
