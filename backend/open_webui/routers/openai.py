@@ -498,6 +498,14 @@ async def get_filtered_models(models, user, db=None):
     filtered_models = []
     for model in models.get('data', []):
         model_info = model_infos.get(model['id'])
+
+        # Direct-connection models (e.g. Sub2API, llama.cpp) with a provider set
+        # are admin-configured and inherently accessible to all users.
+        # Include them without checking the database access control.
+        if model.get('provider'):
+            filtered_models.append(model)
+            continue
+
         if model_info:
             if user.id == model_info.user_id or model_info.id in accessible_model_ids:
                 filtered_models.append(model)
