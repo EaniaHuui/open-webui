@@ -43,11 +43,7 @@ from open_webui.env import (
     ENABLE_OPENAI_API_PASSTHROUGH,
 )
 from open_webui.models.users import UserModel
-from open_webui.utils.sub2api import (
-    is_sub2api_provider,
-    normalize_sub2api_openai_base_url,
-    resolve_sub2api_api_key,
-)
+from open_webui.utils.sub2api import is_sub2api_provider, resolve_sub2api_api_key
 
 from open_webui.constants import ERROR_MESSAGES
 
@@ -189,9 +185,8 @@ async def get_headers_and_cookies(
     token = None
     config = config or {}
     auth_type = config.get('auth_type')
-    normalized_url = normalize_sub2api_openai_base_url(url)
 
-    if is_sub2api_provider(config, normalized_url, request.app.state.config.SUB2API_OPENAI_BASE_URL) and user:
+    if is_sub2api_provider(config, url, request.app.state.config.SUB2API_OPENAI_BASE_URL) and user:
         token = await resolve_sub2api_api_key(request, user)
     elif auth_type == 'bearer' or auth_type is None:
         # Default to bearer if not specified

@@ -40,7 +40,6 @@ from open_webui.utils.auth import (
     validate_password,
 )
 from open_webui.utils.access_control import get_permissions, has_permission
-from open_webui.utils.sub2api import normalize_sub2api_info
 from open_webui.socket.main import disconnect_user_sessions
 
 log = logging.getLogger(__name__)
@@ -376,10 +375,7 @@ async def update_user_status_by_session_user(
 @router.get('/user/info', response_model=Optional[dict])
 async def get_user_info_by_session_user(user=Depends(get_verified_user), db: AsyncSession = Depends(get_async_session)):
     # user already fetched by get_verified_user — no need to refetch
-    info = user.info or {}
-    if isinstance(info.get('sub2api'), dict):
-        return {**info, 'sub2api': normalize_sub2api_info(info.get('sub2api'))}
-    return info
+    return user.info
 
 
 ############################
