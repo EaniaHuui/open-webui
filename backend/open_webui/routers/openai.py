@@ -419,6 +419,9 @@ async def get_all_models_responses(request: Request, user: UserModel) -> list:
                     request_tasks.append(get_models_request(request, url, api_keys[idx], user=user, config=api_config))
                 else:
                     provider = api_config.get('provider', '')
+                    # If provider is empty but auth_type is 'sub2api', treat as sub2api provider
+                    if not provider and api_config.get('auth_type') == 'sub2api':
+                        provider = 'sub2api'
                     model_list = {
                         'object': 'list',
                         'data': [
@@ -452,6 +455,9 @@ async def get_all_models_responses(request: Request, user: UserModel) -> list:
             prefix_id = api_config.get('prefix_id', None)
             tags = api_config.get('tags', [])
             provider = api_config.get('provider', '')
+            # If provider is empty but auth_type is 'sub2api', treat as sub2api provider
+            if not provider and api_config.get('auth_type') == 'sub2api':
+                provider = 'sub2api'
 
             model_list = response if isinstance(response, list) else response.get('data', [])
             if not isinstance(model_list, list):
