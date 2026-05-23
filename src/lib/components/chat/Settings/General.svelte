@@ -282,7 +282,7 @@
 
 			{#if $config?.features?.sub2api_auth_enabled}
 				<div class="flex w-full justify-between">
-					<div class="self-center text-xs font-medium">{$i18n.t('Sub2API Key')}</div>
+					<div class="self-center text-xs font-medium">{$i18n.t('CodexOne Key')}</div>
 					<div class="flex items-center relative">
 						{#if sub2apiKeysLoaded}
 							<select
@@ -295,10 +295,10 @@
 										try {
 											const result = await selectSub2APIKey(localStorage.token, selectedSub2ApiKeyId);
 											if (result) {
-												toast.success($i18n.t('Sub2API key selected successfully'));
+												toast.success($i18n.t('CodexOne key selected successfully'));
 											}
 										} catch (error) {
-											toast.error($i18n.t('Failed to select sub2api key'));
+											toast.error($i18n.t('Failed to select CodexOne key'));
 										}
 									}
 								}}

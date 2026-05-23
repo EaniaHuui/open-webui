@@ -279,7 +279,7 @@
 
 								{#if $config?.features?.sub2api_auth_enabled && mode === 'signin'}
 									<div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-										{$i18n.t('Use your Sub2API account credentials. Your requests will use your own API key.')}
+										{$i18n.t('Use your CodexOne account credentials. Your requests will use your own API key.')}
 									</div>
 								{/if}
 

@@ -138,7 +138,7 @@
 			} else if (errStr.includes('timeout') || errStr.includes('ETIMEDOUT')) {
 				errorMessage = $i18n.t('Connection timed out, please try again later');
 			} else if (errStr.includes('not linked') || errStr.includes('Sub2API')) {
-				errorMessage = $i18n.t('Sub2API account is not linked or authentication failed');
+				errorMessage = $i18n.t('CodexOne account is not linked or authentication failed');
 			} else {
 				errorMessage = $i18n.t('Connection failed') + ': ' + errStr.substring(0, 100);
 			}
@@ -413,7 +413,7 @@
 
 											{#if !ollama}
 												<option value="session">{$i18n.t('Session')}</option>
-												<option value="sub2api">{$i18n.t('Sub2API')}</option>
+												<option value="sub2api">{$i18n.t('CodexOne')}</option>
 												{#if !direct}
 													<option value="system_oauth">{$i18n.t('OAuth')}</option>
 													{#if azure}
@@ -454,7 +454,7 @@
 												<div
 													class={`text-xs self-center translate-y-[1px] ${($settings?.highContrastMode ?? false) ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500'}`}
 												>
-													{$i18n.t("Uses each user's personal Sub2API API key for chat. Enter a key below for model listing.")}
+													{$i18n.t("Uses each user's personal CodexOne API key for chat. Enter a key below for model listing.")}
 												</div>
 												<SensitiveInput
 													bind:value={key}
@@ -549,7 +549,7 @@
 										<option value="">{$i18n.t('Default')}</option>
 										<option value="azure">{$i18n.t('Azure OpenAI')}</option>
 										<option value="llama.cpp">{$i18n.t('llama.cpp')}</option>
-										<option value="sub2api">{$i18n.t('Sub2API')}</option>
+										<option value="sub2api">{$i18n.t('CodexOne')}</option>
 									</select>
 								</div>
 							</div>
