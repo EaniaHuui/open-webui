@@ -5,11 +5,13 @@
 	const dispatch = createEventDispatcher();
 
 	import { config, models, settings, theme, user } from '$lib/stores';
+	import { getSub2APIKeys, selectSub2APIKey, type Sub2APIKey } from '$lib/apis/users';
 
 	const i18n = getContext('i18n');
 
 	import AdvancedParams from './Advanced/AdvancedParams.svelte';
 	import Textarea from '$lib/components/common/Textarea.svelte';
+	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	export let saveSettings: Function;
 	export let getModels: Function;
 
@@ -23,6 +25,11 @@
 	let system = '';
 
 	let showAdvanced = false;
+
+	// Sub2API
+	let sub2apiKeys: Sub2APIKey[] = [];
+	let selectedSub2ApiKeyId: string | null = null;
+	let sub2apiKeysLoaded = false;
 
 	const toggleNotification = async () => {
 		const permission = await Notification.requestPermission();
@@ -121,6 +128,20 @@
 
 		params = { ...params, ...$settings.params };
 		params.stop = $settings?.params?.stop ? ($settings?.params?.stop ?? []).join(',') : null;
+
+		// Fetch sub2api keys if enabled
+		if ($config?.features?.sub2api_auth_enabled) {
+			try {
+				const result = await getSub2APIKeys(localStorage.token);
+				if (result) {
+					sub2apiKeys = result.keys;
+					selectedSub2ApiKeyId = result.selected_key_id;
+					sub2apiKeysLoaded = true;
+				}
+			} catch (error) {
+				console.error('Failed to fetch sub2api keys:', error);
+			}
+		}
 	});
 
 	const applyTheme = (_theme: string) => {
@@ -256,6 +277,40 @@
 					>
 						Help us translate Open WebUI!
 					</a>
+				</div>
+			{/if}
+
+			{#if $config?.features?.sub2api_auth_enabled}
+				<div class="flex w-full justify-between">
+					<div class="self-center text-xs font-medium">{$i18n.t('Sub2API Key')}</div>
+					<div class="flex items-center relative">
+						{#if sub2apiKeysLoaded}
+							<select
+								class="w-fit pr-8 rounded-sm py-2 px-2 text-xs bg-transparent text-right {$settings.highContrastMode
+									? ''
+									: 'outline-hidden'}"
+								bind:value={selectedSub2ApiKeyId}
+								on:change={async () => {
+									if (selectedSub2ApiKeyId) {
+										try {
+											const result = await selectSub2APIKey(localStorage.token, selectedSub2ApiKeyId);
+											if (result) {
+												toast.success($i18n.t('Sub2API key selected successfully'));
+											}
+										} catch (error) {
+											toast.error($i18n.t('Failed to select sub2api key'));
+										}
+									}
+								}}
+							>
+								{#each sub2apiKeys as key}
+									<option value={key.id}>{key.name} ({key.masked_key})</option>
+								{/each}
+							</select>
+						{:else}
+							<div class="pr-2 text-xs text-gray-500">{$i18n.t('Loading...')}</div>
+						{/if}
+					</div>
 				</div>
 			{/if}
 

@@ -550,3 +550,74 @@ export const getUserGroupsById = async (token: string, userId: string) => {
 
 	return res;
 };
+
+
+export type Sub2APIKey = {
+	id: string;
+	name: string;
+	masked_key: string;
+	created_at: number;
+};
+
+export type Sub2APIKeysResponse = {
+	keys: Sub2APIKey[];
+	selected_key_id: string | null;
+};
+
+export const getSub2APIKeys = async (token: string): Promise<Sub2APIKeysResponse | null> => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/users/sub2api/keys`, {
+		method: 'GET',
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			console.error(err);
+			error = err.detail;
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const selectSub2APIKey = async (
+	token: string,
+	keyId: string
+): Promise<{ selected_key_id: string; selected_key_name: string; masked_key_hint: string } | null> => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/users/sub2api/keys/select`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`
+		},
+		body: JSON.stringify({ key_id: keyId })
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			console.error(err);
+			error = err.detail;
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};

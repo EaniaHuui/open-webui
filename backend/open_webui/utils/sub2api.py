@@ -152,7 +152,13 @@ async def resolve_sub2api_api_key(
         )
 
     keys = await client.list_api_keys(access_token)
-    selected_key = keys[0] if keys else None
+    selected_key_id = info.get('selected_key_id')
+
+    # Find the user-selected key, or fall back to first key, or create new
+    if selected_key_id:
+        selected_key = next((key for key in keys if key.get('id') == selected_key_id), None)
+    else:
+        selected_key = keys[0] if keys else None
 
     if not selected_key:
         selected_key = await client.create_api_key(access_token, 'Open WebUI')

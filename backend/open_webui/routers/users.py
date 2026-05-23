@@ -683,3 +683,146 @@ async def get_user_groups_by_id(
     user_id: str, user=Depends(get_admin_user), db: AsyncSession = Depends(get_async_session)
 ):
     return await Groups.get_groups_by_member_id(user_id, db=db)
+
+
+############################
+# Sub2API Keys
+############################
+
+
+class Sub2APIKeySelectForm(BaseModel):
+    key_id: str
+
+
+@router.get('/sub2api/keys')
+async def get_sub2api_keys(
+    request: Request,
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Get the user's sub2api API keys list."""
+    if not request.app.state.config.SUB2API_AUTH_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail='Sub2API authentication is not enabled',
+        )
+
+    try:
+        from open_webui.utils.sub2api import (
+            Sub2APIClient,
+            get_sub2api_info,
+        )
+
+        info = get_sub2api_info(user)
+        access_token = info.get('access_token')
+
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail='Sub2API account is not linked for this Open WebUI user.',
+            )
+
+        client = Sub2APIClient(
+            base_url=request.app.state.config.SUB2API_BASE_URL,
+            timeout=request.app.state.config.SUB2API_REQUEST_TIMEOUT,
+        )
+
+        keys = await client.list_api_keys(access_token)
+
+        # Return keys with masked key hints, and include the currently selected key
+        selected_key_id = info.get('selected_key_id')
+        return {
+            'keys': [
+                {
+                    'id': key.get('id'),
+                    'name': key.get('name'),
+                    'masked_key': key.get('key')[:4] + '...' + key.get('key')[-4:] if key.get('key') else None,
+                    'created_at': key.get('created_at'),
+                }
+                for key in keys
+            ],
+            'selected_key_id': selected_key_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f'Error fetching sub2api keys: {e}')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Failed to fetch sub2api keys',
+        )
+
+
+@router.post('/sub2api/keys/select')
+async def select_sub2api_key(
+    request: Request,
+    form_data: Sub2APIKeySelectForm,
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Select a sub2api API key to use."""
+    if not request.app.state.config.SUB2API_AUTH_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail='Sub2API authentication is not enabled',
+        )
+
+    try:
+        from open_webui.utils.sub2api import (
+            Sub2APIClient,
+            get_sub2api_info,
+            update_sub2api_info,
+            mask_api_key,
+        )
+
+        info = get_sub2api_info(user)
+        access_token = info.get('access_token')
+
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail='Sub2API account is not linked for this Open WebUI user.',
+            )
+
+        client = Sub2APIClient(
+            base_url=request.app.state.config.SUB2API_BASE_URL,
+            timeout=request.app.state.config.SUB2API_REQUEST_TIMEOUT,
+        )
+
+        # Fetch all keys to find the selected one
+        keys = await client.list_api_keys(access_token)
+        selected_key = next((key for key in keys if key.get('id') == form_data.key_id), None)
+
+        if not selected_key:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail='Selected API key not found',
+            )
+
+        # Update the user's sub2api info with the selected key
+        await update_sub2api_info(
+            user.id,
+            {
+                'linked': True,
+                'selected_key_id': selected_key.get('id'),
+                'selected_key_name': selected_key.get('name'),
+                'masked_key_hint': mask_api_key(selected_key.get('key')),
+                'cached_api_key': None,  # Clear cached key, will be re-resolved on next request
+                'last_key_sync_at': int(__import__('time').time()),
+            },
+            db=db,
+        )
+
+        return {
+            'selected_key_id': selected_key.get('id'),
+            'selected_key_name': selected_key.get('name'),
+            'masked_key_hint': mask_api_key(selected_key.get('key')),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f'Error selecting sub2api key: {e}')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Failed to select sub2api key',
+        )
