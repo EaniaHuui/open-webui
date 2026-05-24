@@ -134,12 +134,23 @@
 	export let selectedFilterIds = [];
 
 	export let imageGenerationEnabled = false;
+	export let imageGenerationModelLabel = '';
+	export let imageEditModelLabel = '';
+	export let imageEditEnabled = false;
 	export let webSearchEnabled = false;
 	export let codeInterpreterEnabled = false;
 
 	export let pendingOAuthTools = [];
 
 	let showTerminalMenu = false;
+
+	$: hasImageInputFiles = files.some(
+		(file) => file.type === 'image' || (file?.content_type ?? '').startsWith('image/')
+	);
+	$: activeImageModelLabel =
+		hasImageInputFiles && imageEditEnabled && imageEditModelLabel
+			? imageEditModelLabel
+			: imageGenerationModelLabel;
 
 	export let messageQueue: { id: string; prompt: string; files: any[] }[] = [];
 	export let onQueueSendNow: (id: string) => void = () => {};
@@ -1678,6 +1689,7 @@
 											{toggleFilters}
 											{showWebSearchButton}
 											{showImageGenerationButton}
+											imageModelLabel={activeImageModelLabel}
 											{showCodeInterpreterButton}
 											bind:selectedToolIds
 											bind:selectedFilterIds
@@ -1830,17 +1842,23 @@
 										{/if}
 
 										{#if imageGenerationEnabled}
-											<Tooltip content={$i18n.t('Image')} placement="top">
+											<Tooltip
+											content={activeImageModelLabel
+												? `${$i18n.t('Image')}: ${activeImageModelLabel}`
+												: $i18n.t('Image')}
+											placement="top"
+										>
 												<button
 													on:click|preventDefault={() =>
 														(imageGenerationEnabled = !imageGenerationEnabled)}
 													type="button"
-													class="group p-[7px] flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {imageGenerationEnabled
+													class="group pl-2.5 pr-2 py-1.5 flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {imageGenerationEnabled
 														? ' text-sky-500 dark:text-sky-300 bg-sky-50 hover:bg-sky-100 dark:bg-sky-400/10 dark:hover:bg-sky-700/10 border border-sky-200/40 dark:border-sky-500/20'
 														: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 '}"
 												>
-													<Photo className="size-4" strokeWidth="1.75" />
-													<div class="hidden group-hover:block">
+													<Photo className="size-4 shrink-0" strokeWidth="1.75" />
+													<span class="truncate max-w-40">{activeImageModelLabel || $i18n.t('Image')}</span>
+													<div class="hidden group-hover:block shrink-0">
 														<XMark className="size-4" strokeWidth="1.75" />
 													</div>
 												</button>

@@ -205,12 +205,34 @@ async def get_image_model(request):
             raise HTTPException(status_code=400, detail=ERROR_MESSAGES.DEFAULT(e))
 
 
+async def get_image_edit_model(request):
+    if request.app.state.config.IMAGE_EDIT_ENGINE == 'openai':
+        if request.app.state.config.IMAGE_EDIT_MODEL:
+            return request.app.state.config.IMAGE_EDIT_MODEL
+        if request.app.state.config.IMAGE_EDIT_OPENAI_USE_CONNECTION:
+            try:
+                url, key, api_config = _get_openai_connection_runtime(
+                    request, request.app.state.config.IMAGE_EDIT_OPENAI_CONNECTION_IDX
+                )
+                response = await get_models_request(request, url, key, config=api_config)
+                model_list = response if isinstance(response, list) else response.get('data', [])
+                if model_list:
+                    return model_list[0].get('id') or model_list[0].get('name') or ''
+            except Exception as e:
+                log.debug(f'Failed to infer image edit model from OpenAI connection: {e}')
+        return ''
+    elif request.app.state.config.IMAGE_EDIT_ENGINE in ['gemini', 'comfyui']:
+        return request.app.state.config.IMAGE_EDIT_MODEL if request.app.state.config.IMAGE_EDIT_MODEL else ''
+    return request.app.state.config.IMAGE_EDIT_MODEL if request.app.state.config.IMAGE_EDIT_MODEL else ''
+
+
 class ImagesConfig(BaseModel):
     ENABLE_IMAGE_GENERATION: bool
     ENABLE_IMAGE_PROMPT_GENERATION: bool
 
     IMAGE_GENERATION_ENGINE: str
     IMAGE_GENERATION_MODEL: str
+    IMAGE_GENERATION_MODEL_DISPLAY: str
     IMAGE_SIZE: Optional[str]
     IMAGE_STEPS: Optional[int]
 
@@ -237,6 +259,7 @@ class ImagesConfig(BaseModel):
     ENABLE_IMAGE_EDIT: bool
     IMAGE_EDIT_ENGINE: str
     IMAGE_EDIT_MODEL: str
+    IMAGE_EDIT_MODEL_DISPLAY: str
     IMAGE_EDIT_SIZE: Optional[str]
 
     IMAGES_EDIT_OPENAI_API_BASE_URL: str
@@ -254,11 +277,15 @@ class ImagesConfig(BaseModel):
 
 @router.get('/config', response_model=ImagesConfig)
 async def get_config(request: Request, user=Depends(get_admin_user)):
+    image_generation_model_display = await get_image_model(request)
+    image_edit_model_display = await get_image_edit_model(request)
+
     return {
         'ENABLE_IMAGE_GENERATION': request.app.state.config.ENABLE_IMAGE_GENERATION,
         'ENABLE_IMAGE_PROMPT_GENERATION': request.app.state.config.ENABLE_IMAGE_PROMPT_GENERATION,
         'IMAGE_GENERATION_ENGINE': request.app.state.config.IMAGE_GENERATION_ENGINE,
         'IMAGE_GENERATION_MODEL': request.app.state.config.IMAGE_GENERATION_MODEL,
+        'IMAGE_GENERATION_MODEL_DISPLAY': image_generation_model_display,
         'IMAGE_SIZE': request.app.state.config.IMAGE_SIZE,
         'IMAGE_STEPS': request.app.state.config.IMAGE_STEPS,
         'IMAGES_OPENAI_API_BASE_URL': request.app.state.config.IMAGES_OPENAI_API_BASE_URL,
@@ -280,6 +307,7 @@ async def get_config(request: Request, user=Depends(get_admin_user)):
         'ENABLE_IMAGE_EDIT': request.app.state.config.ENABLE_IMAGE_EDIT,
         'IMAGE_EDIT_ENGINE': request.app.state.config.IMAGE_EDIT_ENGINE,
         'IMAGE_EDIT_MODEL': request.app.state.config.IMAGE_EDIT_MODEL,
+        'IMAGE_EDIT_MODEL_DISPLAY': image_edit_model_display,
         'IMAGE_EDIT_SIZE': request.app.state.config.IMAGE_EDIT_SIZE,
         'IMAGES_EDIT_OPENAI_API_BASE_URL': request.app.state.config.IMAGES_EDIT_OPENAI_API_BASE_URL,
         'IMAGES_EDIT_OPENAI_API_KEY': request.app.state.config.IMAGES_EDIT_OPENAI_API_KEY,
@@ -371,11 +399,15 @@ async def update_config(request: Request, form_data: ImagesConfig, user=Depends(
     request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW = form_data.IMAGES_EDIT_COMFYUI_WORKFLOW
     request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW_NODES = form_data.IMAGES_EDIT_COMFYUI_WORKFLOW_NODES
 
+    image_generation_model_display = await get_image_model(request)
+    image_edit_model_display = await get_image_edit_model(request)
+
     return {
         'ENABLE_IMAGE_GENERATION': request.app.state.config.ENABLE_IMAGE_GENERATION,
         'ENABLE_IMAGE_PROMPT_GENERATION': request.app.state.config.ENABLE_IMAGE_PROMPT_GENERATION,
         'IMAGE_GENERATION_ENGINE': request.app.state.config.IMAGE_GENERATION_ENGINE,
         'IMAGE_GENERATION_MODEL': request.app.state.config.IMAGE_GENERATION_MODEL,
+        'IMAGE_GENERATION_MODEL_DISPLAY': image_generation_model_display,
         'IMAGE_SIZE': request.app.state.config.IMAGE_SIZE,
         'IMAGE_STEPS': request.app.state.config.IMAGE_STEPS,
         'IMAGES_OPENAI_API_BASE_URL': request.app.state.config.IMAGES_OPENAI_API_BASE_URL,
@@ -397,6 +429,7 @@ async def update_config(request: Request, form_data: ImagesConfig, user=Depends(
         'ENABLE_IMAGE_EDIT': request.app.state.config.ENABLE_IMAGE_EDIT,
         'IMAGE_EDIT_ENGINE': request.app.state.config.IMAGE_EDIT_ENGINE,
         'IMAGE_EDIT_MODEL': request.app.state.config.IMAGE_EDIT_MODEL,
+        'IMAGE_EDIT_MODEL_DISPLAY': image_edit_model_display,
         'IMAGE_EDIT_SIZE': request.app.state.config.IMAGE_EDIT_SIZE,
         'IMAGES_EDIT_OPENAI_API_BASE_URL': request.app.state.config.IMAGES_EDIT_OPENAI_API_BASE_URL,
         'IMAGES_EDIT_OPENAI_API_KEY': request.app.state.config.IMAGES_EDIT_OPENAI_API_KEY,

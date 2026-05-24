@@ -47,6 +47,7 @@
 	export let webSearchEnabled = false;
 	export let showImageGenerationButton = false;
 	export let imageGenerationEnabled = false;
+	export let imageModelLabel = '';
 	export let showCodeInterpreterButton = false;
 	export let codeInterpreterEnabled = false;
 
@@ -263,7 +264,9 @@
 											<Photo className="size-4" strokeWidth="1.5" />
 										</div>
 
-										<div class=" truncate">{$i18n.t('Image')}</div>
+										<div class="truncate">
+											{$i18n.t('Image')}{imageModelLabel ? ` (${imageModelLabel})` : ''}
+										</div>
 									</div>
 								</div>
 

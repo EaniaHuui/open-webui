@@ -68,8 +68,15 @@
 	interface MessageType {
 		id: string;
 		model: string;
+		imageModel?: string;
 		content: string;
-		files?: { type: string; url: string }[];
+		files?: {
+			type: string;
+			url: string;
+			name?: string;
+			content_type?: string;
+			size?: number;
+		}[];
 		timestamp: number;
 		role: string;
 		statusHistory?: {
@@ -169,6 +176,7 @@
 
 	let model = null;
 	$: model = $models.find((m) => m.id === message.model);
+	$: displayModelName = message?.imageModel ?? model?.name ?? message.model;
 
 	$: statusEntries = message?.statusHistory ?? [...(message?.status ? [message?.status] : [])];
 	$: hasVisibleStatus =
@@ -667,9 +675,9 @@
 
 		<div class="flex-auto w-0 pl-1 relative">
 			<Name>
-				<Tooltip content={model?.name ?? message.model} placement="top-start">
+				<Tooltip content={displayModelName} placement="top-start">
 					<span id="response-message-model-name" class="line-clamp-1 text-black dark:text-white">
-						{model?.name ?? message.model}
+						{displayModelName}
 					</span>
 				</Tooltip>
 

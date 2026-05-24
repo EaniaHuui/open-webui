@@ -53,6 +53,9 @@
 	export let showCommands = false;
 
 	export let imageGenerationEnabled = false;
+	export let imageGenerationModelLabel = '';
+	export let imageEditModelLabel = '';
+	export let imageEditEnabled = false;
 	export let codeInterpreterEnabled = false;
 	export let webSearchEnabled = false;
 
@@ -219,6 +222,9 @@
 					bind:selectedToolIds
 					bind:selectedFilterIds
 					bind:imageGenerationEnabled
+					{imageGenerationModelLabel}
+					{imageEditModelLabel}
+					{imageEditEnabled}
 					bind:codeInterpreterEnabled
 					bind:webSearchEnabled
 					bind:atSelectedModel

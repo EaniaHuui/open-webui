@@ -51,6 +51,8 @@ from open_webui.routers.images import (
     CreateImageForm,
     image_edits,
     EditImageForm,
+    get_image_model,
+    get_image_edit_model,
 )
 from open_webui.routers.pipelines import (
     process_pipeline_inlet_filter,
@@ -1815,6 +1817,8 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
                 }
             )
 
+            image_model = await get_image_edit_model(request)
+
             await __event_emitter__(
                 {
                     'type': 'files',
@@ -1825,7 +1829,8 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
                                 'url': image['url'],
                             }
                             for image in images
-                        ]
+                        ],
+                        'image_model': image_model,
                     },
                 }
             )
@@ -1904,6 +1909,8 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
                 }
             )
 
+            image_model = await get_image_model(request)
+
             await __event_emitter__(
                 {
                     'type': 'files',
@@ -1914,7 +1921,8 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
                                 'url': image['url'],
                             }
                             for image in images
-                        ]
+                        ],
+                        'image_model': image_model,
                     },
                 }
             )

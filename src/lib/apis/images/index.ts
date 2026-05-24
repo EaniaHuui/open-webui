@@ -5,6 +5,7 @@ export type ImagesConfig = {
 	ENABLE_IMAGE_PROMPT_GENERATION: boolean;
 	IMAGE_GENERATION_ENGINE: string;
 	IMAGE_GENERATION_MODEL: string;
+	IMAGE_GENERATION_MODEL_DISPLAY: string;
 	IMAGE_SIZE: string | null;
 	IMAGE_STEPS: number | null;
 	IMAGES_OPENAI_API_BASE_URL: string;
@@ -26,6 +27,7 @@ export type ImagesConfig = {
 	ENABLE_IMAGE_EDIT: boolean;
 	IMAGE_EDIT_ENGINE: string;
 	IMAGE_EDIT_MODEL: string;
+	IMAGE_EDIT_MODEL_DISPLAY: string;
 	IMAGE_EDIT_SIZE: string | null;
 	IMAGES_EDIT_OPENAI_API_BASE_URL: string;
 	IMAGES_EDIT_OPENAI_API_KEY: string;

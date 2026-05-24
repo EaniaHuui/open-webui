@@ -82,6 +82,7 @@
 	import { generateOpenAIChatCompletion } from '$lib/apis/openai';
 	import { processWeb, processWebSearch, processYoutubeVideo } from '$lib/apis/retrieval';
 	import { getAndUpdateUserLocation, getUserSettings } from '$lib/apis/users';
+	import { getConfig as getImagesConfig } from '$lib/apis/images';
 	import {
 		generateQueries,
 		chatAction,
@@ -153,6 +154,9 @@
 	let pendingOAuthTools = [];
 
 	let imageGenerationEnabled = false;
+	let imageGenerationModelLabel = '';
+	let imageEditModelLabel = '';
+	let imageEditEnabled = false;
 	let webSearchEnabled = false;
 	let codeInterpreterEnabled = false;
 
@@ -318,6 +322,20 @@
 			($terminalServers ?? []).some((t) => t.id && t.id === tid) ||
 			($settings?.terminalServers ?? []).some((s) => s.url === tid)
 		);
+	};
+
+	const loadImageConfig = async () => {
+		try {
+			const imageConfig = await getImagesConfig(localStorage.token);
+			imageGenerationModelLabel = imageConfig?.IMAGE_GENERATION_MODEL_DISPLAY ?? '';
+			imageEditModelLabel = imageConfig?.IMAGE_EDIT_MODEL_DISPLAY ?? '';
+			imageEditEnabled = imageConfig?.ENABLE_IMAGE_EDIT ?? false;
+		} catch (error) {
+			console.error('Failed to load image config:', error);
+			imageGenerationModelLabel = '';
+			imageEditModelLabel = '';
+			imageEditEnabled = false;
+		}
 	};
 
 	const setDefaults = async () => {
@@ -499,6 +517,9 @@
 					message.content = data.content;
 				} else if (type === 'chat:message:files' || type === 'files') {
 					message.files = data.files;
+					if (data.image_model) {
+						message.imageModel = data.image_model;
+					}
 				} else if (type === 'chat:message:tasks') {
 					chatTasks = data.tasks;
 				} else if (type === 'chat:message:embeds' || type === 'embeds') {
@@ -722,6 +743,7 @@
 	onMount(() => {
 		loading = true;
 		console.log('mounted');
+		loadImageConfig();
 		window.addEventListener('message', onMessageHandler);
 		$socket?.on('events', chatEventHandler);
 
@@ -2090,6 +2112,7 @@
 					done: false,
 					model: model.id,
 					modelName: model.name ?? model.id,
+					imageModel: imageGenerationModelLabel,
 					modelIdx: modelIdx ? modelIdx : _modelIdx,
 					timestamp: Math.floor(Date.now() / 1000) // Unix epoch
 				};
@@ -3104,6 +3127,9 @@
 									bind:selectedToolIds
 									bind:selectedFilterIds
 									bind:imageGenerationEnabled
+									{imageGenerationModelLabel}
+									{imageEditModelLabel}
+									{imageEditEnabled}
 									bind:codeInterpreterEnabled
 									{pendingOAuthTools}
 									bind:webSearchEnabled
@@ -3185,6 +3211,9 @@
 									bind:selectedToolIds
 									bind:selectedFilterIds
 									bind:imageGenerationEnabled
+									{imageGenerationModelLabel}
+									{imageEditModelLabel}
+									{imageEditEnabled}
 									bind:codeInterpreterEnabled
 									bind:webSearchEnabled
 									bind:atSelectedModel
