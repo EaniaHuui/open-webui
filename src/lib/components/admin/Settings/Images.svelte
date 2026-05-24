@@ -7,12 +7,11 @@
 	import { getBackendConfig } from '$lib/apis';
 	import {
 		getImageGenerationModels,
-		getImageGenerationConfig,
-		updateImageGenerationConfig,
 		getConfig,
 		updateConfig,
 		verifyConfigUrl
 	} from '$lib/apis/images';
+	import { getOpenAIConfig } from '$lib/apis/openai';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
@@ -27,6 +26,7 @@
 
 	let models = null;
 	let config = null;
+	let openAIConnections = [];
 
 	let showComfyUIWorkflowEditor = false;
 	let REQUIRED_WORKFLOW_NODES = [
@@ -98,6 +98,33 @@
 		});
 	};
 
+	const getOpenAIConnections = async () => {
+		const res = await getOpenAIConfig(localStorage.token).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+
+		if (!res) {
+			openAIConnections = [];
+			return;
+		}
+
+		openAIConnections = (res.OPENAI_API_BASE_URLS ?? []).map((url, idx) => {
+			const config = res.OPENAI_API_CONFIGS?.[idx] ?? res.OPENAI_API_CONFIGS?.[url] ?? {};
+			return {
+				idx,
+				url,
+				auth_type: config.auth_type ?? 'bearer',
+				provider: config.provider ?? (config.auth_type === 'sub2api' ? 'sub2api' : ''),
+				enable: config.enable ?? true,
+				label:
+					config.name ??
+					config.label ??
+					`${url}${config.auth_type === 'sub2api' ? ' (CodexOne)' : ''}`
+			};
+		});
+	};
+
 	const updateConfigHandler = async () => {
 		if (
 			config.IMAGE_GENERATION_ENGINE === 'automatic1111' &&
@@ -112,8 +139,21 @@
 			config.ENABLE_IMAGE_GENERATION = false;
 
 			return null;
-		} else if (config.IMAGE_GENERATION_ENGINE === 'openai' && config.IMAGES_OPENAI_API_KEY === '') {
+		} else if (
+			config.IMAGE_GENERATION_ENGINE === 'openai' &&
+			!config.IMAGE_OPENAI_USE_CONNECTION &&
+			config.IMAGES_OPENAI_API_KEY === ''
+		) {
 			toast.error($i18n.t('OpenAI API Key is required.'));
+			config.ENABLE_IMAGE_GENERATION = false;
+
+			return null;
+		} else if (
+			config.IMAGE_GENERATION_ENGINE === 'openai' &&
+			config.IMAGE_OPENAI_USE_CONNECTION &&
+			config.IMAGE_OPENAI_CONNECTION_IDX < 0
+		) {
+			toast.error($i18n.t('OpenAI connection is required.'));
 			config.ENABLE_IMAGE_GENERATION = false;
 
 			return null;
@@ -159,7 +199,9 @@
 			if (obj && typeof obj === 'object') {
 				return true;
 			}
-		} catch (e) {}
+		} catch {
+			return false;
+		}
 		return false;
 	};
 
@@ -217,6 +259,15 @@
 
 			if (res) {
 				config = res;
+			}
+
+			await getOpenAIConnections();
+
+			if (config.IMAGE_OPENAI_CONNECTION_IDX == null) {
+				config.IMAGE_OPENAI_CONNECTION_IDX = -1;
+			}
+			if (config.IMAGE_EDIT_OPENAI_CONNECTION_IDX == null) {
+				config.IMAGE_EDIT_OPENAI_CONNECTION_IDX = -1;
 			}
 
 			if (config.ENABLE_IMAGE_GENERATION) {
@@ -405,6 +456,9 @@
 								class="w-fit pr-8 cursor-pointer rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
 								bind:value={config.IMAGE_GENERATION_ENGINE}
 								placeholder={$i18n.t('Select Engine')}
+								on:change={async () => {
+									await getModels();
+								}}
 							>
 								<option value="openai">{$i18n.t('Default (Open AI)')}</option>
 								<option value="comfyui">{$i18n.t('ComfyUI')}</option>
@@ -417,84 +471,134 @@
 					{#if config?.IMAGE_GENERATION_ENGINE === 'openai'}
 						<div class="mb-2.5">
 							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('OpenAI API Base URL')}
+								<div class="text-xs pr-2">
+									<div class="">{$i18n.t('Use OpenAI Connection')}</div>
+								</div>
+								<Switch
+									bind:state={config.IMAGE_OPENAI_USE_CONNECTION}
+									on:change={async () => {
+										if (config.IMAGE_OPENAI_USE_CONNECTION && config.IMAGE_OPENAI_CONNECTION_IDX < 0) {
+											const enabledConnection = openAIConnections.find((connection) => connection.enable);
+											config.IMAGE_OPENAI_CONNECTION_IDX = enabledConnection ? enabledConnection.idx : -1;
+										}
+										await getModels();
+									}}
+								/>
+							</div>
+						</div>
+
+						{#if config.IMAGE_OPENAI_USE_CONNECTION}
+							<div class="mb-2.5">
+								<div class="flex w-full justify-between items-center gap-4">
+									<div class="text-xs pr-2 shrink-0">
+										<div class="">{$i18n.t('OpenAI Connection')}</div>
+									</div>
+
+									<select
+										class="flex-1 max-w-sm pr-8 cursor-pointer rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
+										bind:value={config.IMAGE_OPENAI_CONNECTION_IDX}
+										on:change={async () => {
+											config.IMAGE_GENERATION_MODEL = '';
+											await getModels();
+										}}
+									>
+										<option value={-1}>{$i18n.t('Select Connection')}</option>
+										{#each openAIConnections as connection}
+											<option value={connection.idx} disabled={!connection.enable}>
+												{connection.label}
+											</option>
+										{/each}
+									</select>
+								</div>
+							</div>
+
+							<div class="text-xs text-gray-500 mb-2.5">
+								{$i18n.t(
+									'If the selected connection uses CodexOne authentication, image generation will use each user\'s selected CodexOne API key automatically.'
+								)}
+							</div>
+						{:else}
+							<div class="mb-2.5">
+								<div class="flex w-full justify-between items-center">
+									<div class="text-xs pr-2 shrink-0">
+										<div class="">
+											{$i18n.t('OpenAI API Base URL')}
+										</div>
+									</div>
+
+									<div class="flex w-full">
+										<div class="flex-1">
+											<input
+												class="w-full text-sm bg-transparent outline-hidden text-right"
+												placeholder={$i18n.t('API Base URL')}
+												bind:value={config.IMAGES_OPENAI_API_BASE_URL}
+											/>
+										</div>
 									</div>
 								</div>
+							</div>
 
-								<div class="flex w-full">
-									<div class="flex-1">
-										<input
-											class="w-full text-sm bg-transparent outline-hidden text-right"
-											placeholder={$i18n.t('API Base URL')}
-											bind:value={config.IMAGES_OPENAI_API_BASE_URL}
+							<div class="mb-2.5">
+								<div class="flex w-full justify-between items-center">
+									<div class="text-xs pr-2 shrink-0">
+										<div class="">
+											{$i18n.t('OpenAI API Key')}
+										</div>
+									</div>
+
+									<div class="flex w-full">
+										<div class="flex-1">
+											<SensitiveInput
+												inputClassName="text-right w-full"
+												placeholder={$i18n.t('API Key')}
+												bind:value={config.IMAGES_OPENAI_API_KEY}
+												required={false}
+											/>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<div class="mb-2.5">
+								<div class="flex w-full justify-between items-center">
+									<div class="text-xs pr-2 shrink-0">
+										<div class="">
+											{$i18n.t('OpenAI API Version')}
+										</div>
+									</div>
+
+									<div class="flex w-full">
+										<div class="flex-1">
+											<input
+												class="w-full text-sm bg-transparent outline-hidden text-right"
+												placeholder={$i18n.t('API Version')}
+												bind:value={config.IMAGES_OPENAI_API_VERSION}
+											/>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<div class="mb-2.5">
+								<div class="flex w-full justify-between items-center">
+									<div class="text-xs pr-2 shrink-0">
+										<div class="">
+											{$i18n.t('Additional Parameters')}
+										</div>
+									</div>
+								</div>
+								<div class="mt-1.5 flex w-full">
+									<div class="flex-1 mr-2">
+										<Textarea
+											className="rounded-lg w-full py-2 px-3 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+											bind:value={config.IMAGES_OPENAI_API_PARAMS}
+											placeholder={$i18n.t('Enter additional parameters in JSON format')}
+											minSize={100}
 										/>
 									</div>
 								</div>
 							</div>
-						</div>
-
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('OpenAI API Key')}
-									</div>
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<SensitiveInput
-											inputClassName="text-right w-full"
-											placeholder={$i18n.t('API Key')}
-											bind:value={config.IMAGES_OPENAI_API_KEY}
-											required={false}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('OpenAI API Version')}
-									</div>
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<input
-											class="w-full text-sm bg-transparent outline-hidden text-right"
-											placeholder={$i18n.t('API Version')}
-											bind:value={config.IMAGES_OPENAI_API_VERSION}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('Additional Parameters')}
-									</div>
-								</div>
-							</div>
-							<div class="mt-1.5 flex w-full">
-								<div class="flex-1 mr-2">
-									<Textarea
-										className="rounded-lg w-full py-2 px-3 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
-										bind:value={config.IMAGES_OPENAI_API_PARAMS}
-										placeholder={$i18n.t('Enter additional parameters in JSON format')}
-										minSize={100}
-									/>
-								</div>
-							</div>
-						</div>
+						{/if}
 					{:else if (config?.IMAGE_GENERATION_ENGINE ?? 'automatic1111') === 'automatic1111'}
 						<div class="mb-2.5">
 							<div class="flex w-full justify-between items-center">
@@ -953,6 +1057,11 @@
 								class="w-fit pr-8 cursor-pointer rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
 								bind:value={config.IMAGE_EDIT_ENGINE}
 								placeholder={$i18n.t('Select Engine')}
+								on:change={async () => {
+									if (config.IMAGE_EDIT_ENGINE === 'openai' && config.IMAGE_EDIT_OPENAI_USE_CONNECTION) {
+										config.IMAGE_EDIT_MODEL = '';
+									}
+								}}
 							>
 								<option value="openai">{$i18n.t('Default (Open AI)')}</option>
 								<option value="comfyui">{$i18n.t('ComfyUI')}</option>
@@ -964,64 +1073,112 @@
 					{#if config?.IMAGE_EDIT_ENGINE === 'openai'}
 						<div class="mb-2.5">
 							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('OpenAI API Base URL')}
-									</div>
+								<div class="text-xs pr-2">
+									<div class="">{$i18n.t('Use OpenAI Connection')}</div>
 								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<input
-											class="w-full text-sm bg-transparent outline-hidden text-right"
-											placeholder={$i18n.t('API Base URL')}
-											bind:value={config.IMAGES_EDIT_OPENAI_API_BASE_URL}
-										/>
-									</div>
-								</div>
+								<Switch
+									bind:state={config.IMAGE_EDIT_OPENAI_USE_CONNECTION}
+									on:change={() => {
+										if (config.IMAGE_EDIT_OPENAI_USE_CONNECTION && config.IMAGE_EDIT_OPENAI_CONNECTION_IDX < 0) {
+											const enabledConnection = openAIConnections.find((connection) => connection.enable);
+											config.IMAGE_EDIT_OPENAI_CONNECTION_IDX = enabledConnection ? enabledConnection.idx : -1;
+										}
+									}}
+								/>
 							</div>
 						</div>
 
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('OpenAI API Key')}
+						{#if config.IMAGE_EDIT_OPENAI_USE_CONNECTION}
+							<div class="mb-2.5">
+								<div class="flex w-full justify-between items-center gap-4">
+									<div class="text-xs pr-2 shrink-0">
+										<div class="">{$i18n.t('OpenAI Connection')}</div>
 									</div>
-								</div>
 
-								<div class="flex w-full">
-									<div class="flex-1">
-										<SensitiveInput
-											inputClassName="text-right w-full"
-											placeholder={$i18n.t('API Key')}
-											bind:value={config.IMAGES_EDIT_OPENAI_API_KEY}
-											required={false}
-										/>
+									<select
+										class="flex-1 max-w-sm pr-8 cursor-pointer rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
+										bind:value={config.IMAGE_EDIT_OPENAI_CONNECTION_IDX}
+										on:change={() => {
+											config.IMAGE_EDIT_MODEL = '';
+										}}
+									>
+										<option value={-1}>{$i18n.t('Select Connection')}</option>
+										{#each openAIConnections as connection}
+											<option value={connection.idx} disabled={!connection.enable}>
+												{connection.label}
+											</option>
+										{/each}
+									</select>
+								</div>
+							</div>
+
+							<div class="text-xs text-gray-500 mb-2.5">
+								{$i18n.t(
+									'Image edits will reuse the selected OpenAI connection and its CodexOne authentication when applicable.'
+								)}
+							</div>
+						{:else}
+							<div class="mb-2.5">
+								<div class="flex w-full justify-between items-center">
+									<div class="text-xs pr-2 shrink-0">
+										<div class="">
+											{$i18n.t('OpenAI API Base URL')}
+										</div>
+									</div>
+
+									<div class="flex w-full">
+										<div class="flex-1">
+											<input
+												class="w-full text-sm bg-transparent outline-hidden text-right"
+												placeholder={$i18n.t('API Base URL')}
+												bind:value={config.IMAGES_EDIT_OPENAI_API_BASE_URL}
+											/>
+										</div>
 									</div>
 								</div>
 							</div>
-						</div>
 
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('OpenAI API Version')}
+							<div class="mb-2.5">
+								<div class="flex w-full justify-between items-center">
+									<div class="text-xs pr-2 shrink-0">
+										<div class="">
+											{$i18n.t('OpenAI API Key')}
+										</div>
 									</div>
-								</div>
 
-								<div class="flex w-full">
-									<div class="flex-1">
-										<input
-											class="w-full text-sm bg-transparent outline-hidden text-right"
-											placeholder={$i18n.t('API Version')}
-											bind:value={config.IMAGES_EDIT_OPENAI_API_VERSION}
-										/>
+									<div class="flex w-full">
+										<div class="flex-1">
+											<SensitiveInput
+												inputClassName="text-right w-full"
+												placeholder={$i18n.t('API Key')}
+												bind:value={config.IMAGES_EDIT_OPENAI_API_KEY}
+												required={false}
+											/>
+										</div>
 									</div>
 								</div>
 							</div>
-						</div>
+
+							<div class="mb-2.5">
+								<div class="flex w-full justify-between items-center">
+									<div class="text-xs pr-2 shrink-0">
+										<div class="">
+											{$i18n.t('OpenAI API Version')}
+										</div>
+									</div>
+
+									<div class="flex w-full">
+										<div class="flex-1">
+											<input
+												class="w-full text-sm bg-transparent outline-hidden text-right"
+												placeholder={$i18n.t('API Version')}
+												bind:value={config.IMAGES_EDIT_OPENAI_API_VERSION}
+											/>
+										</div>
+									</div>
+								</div>
+							</div>
+						{/if}
 					{:else if config?.IMAGE_EDIT_ENGINE === 'comfyui'}
 						<div class="mb-2.5">
 							<div class="flex w-full justify-between items-center">

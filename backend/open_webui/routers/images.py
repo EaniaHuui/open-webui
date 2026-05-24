@@ -32,6 +32,7 @@ from open_webui.utils.access_control import has_permission
 from open_webui.utils.headers import include_user_info_headers
 from open_webui.internal.db import get_async_session
 from sqlalchemy.ext.asyncio import AsyncSession
+from open_webui.routers.openai import get_headers_and_cookies, get_models_request
 from open_webui.utils.images.comfyui import (
     ComfyUICreateImageForm,
     ComfyUIEditImageForm,
@@ -81,13 +82,102 @@ async def set_image_model(request: Request, model: str):
     return request.app.state.config.IMAGE_GENERATION_MODEL
 
 
+def _get_openai_connection_runtime(request: Request, idx: int):
+    api_base_urls = list(request.app.state.config.OPENAI_API_BASE_URLS)
+    api_keys = list(request.app.state.config.OPENAI_API_KEYS)
+    api_configs = request.app.state.config.OPENAI_API_CONFIGS
+
+    if idx < 0 or idx >= len(api_base_urls):
+        raise HTTPException(status_code=400, detail='Invalid OpenAI connection index')
+
+    if len(api_keys) < len(api_base_urls):
+        api_keys += [''] * (len(api_base_urls) - len(api_keys))
+    elif len(api_keys) > len(api_base_urls):
+        api_keys = api_keys[: len(api_base_urls)]
+
+    url = api_base_urls[idx]
+    key = api_keys[idx]
+    api_config = api_configs.get(
+        str(idx),
+        api_configs.get(url, {}),
+    )
+
+    if not api_config.get('enable', True):
+        raise HTTPException(status_code=400, detail='Selected OpenAI connection is disabled')
+
+    return url, key, api_config
+
+
+async def _get_image_openai_request_context(request: Request, user, *, edit: bool = False):
+    use_connection = (
+        request.app.state.config.IMAGE_EDIT_OPENAI_USE_CONNECTION
+        if edit
+        else request.app.state.config.IMAGE_OPENAI_USE_CONNECTION
+    )
+    connection_idx = (
+        request.app.state.config.IMAGE_EDIT_OPENAI_CONNECTION_IDX
+        if edit
+        else request.app.state.config.IMAGE_OPENAI_CONNECTION_IDX
+    )
+
+    if use_connection:
+        url, key, api_config = _get_openai_connection_runtime(request, connection_idx)
+        headers, cookies = await get_headers_and_cookies(request, url, key, api_config, user=user)
+        api_version = api_config.get('api_version', '')
+        api_params = api_config.get('image_params', {})
+        return {
+            'url': url,
+            'headers': headers,
+            'cookies': cookies,
+            'api_version': api_version,
+            'api_params': api_params if isinstance(api_params, dict) else {},
+            'via_connection': True,
+            'connection_idx': connection_idx,
+            'api_config': api_config,
+        }
+
+    headers = {
+        'Authorization': f'Bearer {request.app.state.config.IMAGES_EDIT_OPENAI_API_KEY if edit else request.app.state.config.IMAGES_OPENAI_API_KEY}',
+        'Content-Type': 'application/json',
+    }
+
+    if ENABLE_FORWARD_USER_INFO_HEADERS:
+        headers = include_user_info_headers(headers, user)
+
+    return {
+        'url': request.app.state.config.IMAGES_EDIT_OPENAI_API_BASE_URL if edit else request.app.state.config.IMAGES_OPENAI_API_BASE_URL,
+        'headers': headers,
+        'cookies': {},
+        'api_version': request.app.state.config.IMAGES_EDIT_OPENAI_API_VERSION if edit else request.app.state.config.IMAGES_OPENAI_API_VERSION,
+        'api_params': {}
+        if edit
+        else (
+            request.app.state.config.IMAGES_OPENAI_API_PARAMS
+            if isinstance(request.app.state.config.IMAGES_OPENAI_API_PARAMS, dict)
+            else {}
+        ),
+        'via_connection': False,
+        'connection_idx': None,
+        'api_config': {},
+    }
+
+
 async def get_image_model(request):
     if request.app.state.config.IMAGE_GENERATION_ENGINE == 'openai':
-        return (
-            request.app.state.config.IMAGE_GENERATION_MODEL
-            if request.app.state.config.IMAGE_GENERATION_MODEL
-            else 'dall-e-2'
-        )
+        if request.app.state.config.IMAGE_GENERATION_MODEL:
+            return request.app.state.config.IMAGE_GENERATION_MODEL
+        if request.app.state.config.IMAGE_OPENAI_USE_CONNECTION:
+            try:
+                url, key, api_config = _get_openai_connection_runtime(
+                    request, request.app.state.config.IMAGE_OPENAI_CONNECTION_IDX
+                )
+                response = await get_models_request(request, url, key, config=api_config)
+                model_list = response if isinstance(response, list) else response.get('data', [])
+                if model_list:
+                    return model_list[0].get('id') or model_list[0].get('name') or 'dall-e-2'
+            except Exception as e:
+                log.debug(f'Failed to infer image model from OpenAI connection: {e}')
+        return 'dall-e-2'
     elif request.app.state.config.IMAGE_GENERATION_ENGINE == 'gemini':
         return (
             request.app.state.config.IMAGE_GENERATION_MODEL
@@ -128,6 +218,8 @@ class ImagesConfig(BaseModel):
     IMAGES_OPENAI_API_KEY: str
     IMAGES_OPENAI_API_VERSION: str
     IMAGES_OPENAI_API_PARAMS: Optional[dict | str]
+    IMAGE_OPENAI_USE_CONNECTION: bool
+    IMAGE_OPENAI_CONNECTION_IDX: int
 
     AUTOMATIC1111_BASE_URL: str
     AUTOMATIC1111_API_AUTH: Optional[dict | str]
@@ -150,6 +242,8 @@ class ImagesConfig(BaseModel):
     IMAGES_EDIT_OPENAI_API_BASE_URL: str
     IMAGES_EDIT_OPENAI_API_KEY: str
     IMAGES_EDIT_OPENAI_API_VERSION: str
+    IMAGE_EDIT_OPENAI_USE_CONNECTION: bool
+    IMAGE_EDIT_OPENAI_CONNECTION_IDX: int
     IMAGES_EDIT_GEMINI_API_BASE_URL: str
     IMAGES_EDIT_GEMINI_API_KEY: str
     IMAGES_EDIT_COMFYUI_BASE_URL: str
@@ -171,6 +265,8 @@ async def get_config(request: Request, user=Depends(get_admin_user)):
         'IMAGES_OPENAI_API_KEY': request.app.state.config.IMAGES_OPENAI_API_KEY,
         'IMAGES_OPENAI_API_VERSION': request.app.state.config.IMAGES_OPENAI_API_VERSION,
         'IMAGES_OPENAI_API_PARAMS': request.app.state.config.IMAGES_OPENAI_API_PARAMS,
+        'IMAGE_OPENAI_USE_CONNECTION': request.app.state.config.IMAGE_OPENAI_USE_CONNECTION,
+        'IMAGE_OPENAI_CONNECTION_IDX': request.app.state.config.IMAGE_OPENAI_CONNECTION_IDX,
         'AUTOMATIC1111_BASE_URL': request.app.state.config.AUTOMATIC1111_BASE_URL,
         'AUTOMATIC1111_API_AUTH': request.app.state.config.AUTOMATIC1111_API_AUTH,
         'AUTOMATIC1111_PARAMS': request.app.state.config.AUTOMATIC1111_PARAMS,
@@ -188,6 +284,8 @@ async def get_config(request: Request, user=Depends(get_admin_user)):
         'IMAGES_EDIT_OPENAI_API_BASE_URL': request.app.state.config.IMAGES_EDIT_OPENAI_API_BASE_URL,
         'IMAGES_EDIT_OPENAI_API_KEY': request.app.state.config.IMAGES_EDIT_OPENAI_API_KEY,
         'IMAGES_EDIT_OPENAI_API_VERSION': request.app.state.config.IMAGES_EDIT_OPENAI_API_VERSION,
+        'IMAGE_EDIT_OPENAI_USE_CONNECTION': request.app.state.config.IMAGE_EDIT_OPENAI_USE_CONNECTION,
+        'IMAGE_EDIT_OPENAI_CONNECTION_IDX': request.app.state.config.IMAGE_EDIT_OPENAI_CONNECTION_IDX,
         'IMAGES_EDIT_GEMINI_API_BASE_URL': request.app.state.config.IMAGES_EDIT_GEMINI_API_BASE_URL,
         'IMAGES_EDIT_GEMINI_API_KEY': request.app.state.config.IMAGES_EDIT_GEMINI_API_KEY,
         'IMAGES_EDIT_COMFYUI_BASE_URL': request.app.state.config.IMAGES_EDIT_COMFYUI_BASE_URL,
@@ -237,6 +335,8 @@ async def update_config(request: Request, form_data: ImagesConfig, user=Depends(
     request.app.state.config.IMAGES_OPENAI_API_KEY = form_data.IMAGES_OPENAI_API_KEY
     request.app.state.config.IMAGES_OPENAI_API_VERSION = form_data.IMAGES_OPENAI_API_VERSION
     request.app.state.config.IMAGES_OPENAI_API_PARAMS = form_data.IMAGES_OPENAI_API_PARAMS
+    request.app.state.config.IMAGE_OPENAI_USE_CONNECTION = form_data.IMAGE_OPENAI_USE_CONNECTION
+    request.app.state.config.IMAGE_OPENAI_CONNECTION_IDX = form_data.IMAGE_OPENAI_CONNECTION_IDX
 
     request.app.state.config.AUTOMATIC1111_BASE_URL = form_data.AUTOMATIC1111_BASE_URL
     request.app.state.config.AUTOMATIC1111_API_AUTH = form_data.AUTOMATIC1111_API_AUTH
@@ -260,6 +360,8 @@ async def update_config(request: Request, form_data: ImagesConfig, user=Depends(
     request.app.state.config.IMAGES_EDIT_OPENAI_API_BASE_URL = form_data.IMAGES_EDIT_OPENAI_API_BASE_URL
     request.app.state.config.IMAGES_EDIT_OPENAI_API_KEY = form_data.IMAGES_EDIT_OPENAI_API_KEY
     request.app.state.config.IMAGES_EDIT_OPENAI_API_VERSION = form_data.IMAGES_EDIT_OPENAI_API_VERSION
+    request.app.state.config.IMAGE_EDIT_OPENAI_USE_CONNECTION = form_data.IMAGE_EDIT_OPENAI_USE_CONNECTION
+    request.app.state.config.IMAGE_EDIT_OPENAI_CONNECTION_IDX = form_data.IMAGE_EDIT_OPENAI_CONNECTION_IDX
 
     request.app.state.config.IMAGES_EDIT_GEMINI_API_BASE_URL = form_data.IMAGES_EDIT_GEMINI_API_BASE_URL
     request.app.state.config.IMAGES_EDIT_GEMINI_API_KEY = form_data.IMAGES_EDIT_GEMINI_API_KEY
@@ -280,6 +382,8 @@ async def update_config(request: Request, form_data: ImagesConfig, user=Depends(
         'IMAGES_OPENAI_API_KEY': request.app.state.config.IMAGES_OPENAI_API_KEY,
         'IMAGES_OPENAI_API_VERSION': request.app.state.config.IMAGES_OPENAI_API_VERSION,
         'IMAGES_OPENAI_API_PARAMS': request.app.state.config.IMAGES_OPENAI_API_PARAMS,
+        'IMAGE_OPENAI_USE_CONNECTION': request.app.state.config.IMAGE_OPENAI_USE_CONNECTION,
+        'IMAGE_OPENAI_CONNECTION_IDX': request.app.state.config.IMAGE_OPENAI_CONNECTION_IDX,
         'AUTOMATIC1111_BASE_URL': request.app.state.config.AUTOMATIC1111_BASE_URL,
         'AUTOMATIC1111_API_AUTH': request.app.state.config.AUTOMATIC1111_API_AUTH,
         'AUTOMATIC1111_PARAMS': request.app.state.config.AUTOMATIC1111_PARAMS,
@@ -297,6 +401,8 @@ async def update_config(request: Request, form_data: ImagesConfig, user=Depends(
         'IMAGES_EDIT_OPENAI_API_BASE_URL': request.app.state.config.IMAGES_EDIT_OPENAI_API_BASE_URL,
         'IMAGES_EDIT_OPENAI_API_KEY': request.app.state.config.IMAGES_EDIT_OPENAI_API_KEY,
         'IMAGES_EDIT_OPENAI_API_VERSION': request.app.state.config.IMAGES_EDIT_OPENAI_API_VERSION,
+        'IMAGE_EDIT_OPENAI_USE_CONNECTION': request.app.state.config.IMAGE_EDIT_OPENAI_USE_CONNECTION,
+        'IMAGE_EDIT_OPENAI_CONNECTION_IDX': request.app.state.config.IMAGE_EDIT_OPENAI_CONNECTION_IDX,
         'IMAGES_EDIT_GEMINI_API_BASE_URL': request.app.state.config.IMAGES_EDIT_GEMINI_API_BASE_URL,
         'IMAGES_EDIT_GEMINI_API_KEY': request.app.state.config.IMAGES_EDIT_GEMINI_API_KEY,
         'IMAGES_EDIT_COMFYUI_BASE_URL': request.app.state.config.IMAGES_EDIT_COMFYUI_BASE_URL,
@@ -353,6 +459,20 @@ async def verify_url(request: Request, user=Depends(get_admin_user)):
 async def get_models(request: Request, user=Depends(get_verified_user)):
     try:
         if request.app.state.config.IMAGE_GENERATION_ENGINE == 'openai':
+            if request.app.state.config.IMAGE_OPENAI_USE_CONNECTION:
+                url, key, api_config = _get_openai_connection_runtime(
+                    request, request.app.state.config.IMAGE_OPENAI_CONNECTION_IDX
+                )
+                response = await get_models_request(request, url, key, user=user, config=api_config)
+                model_list = response if isinstance(response, list) else response.get('data', [])
+                return [
+                    {
+                        'id': model.get('id', model.get('name', '')),
+                        'name': model.get('name', model.get('id', '')),
+                    }
+                    for model in model_list
+                    if model.get('id') or model.get('name')
+                ]
             return [
                 {'id': 'dall-e-2', 'name': 'DALL·E 2'},
                 {'id': 'dall-e-3', 'name': 'DALL·E 3'},
@@ -550,17 +670,13 @@ async def image_generations(
 
     try:
         if request.app.state.config.IMAGE_GENERATION_ENGINE == 'openai':
-            headers = {
-                'Authorization': f'Bearer {request.app.state.config.IMAGES_OPENAI_API_KEY}',
-                'Content-Type': 'application/json',
-            }
+            request_context = await _get_image_openai_request_context(request, user)
+            headers = request_context['headers']
+            cookies = request_context['cookies']
 
-            if ENABLE_FORWARD_USER_INFO_HEADERS:
-                headers = include_user_info_headers(headers, user)
-
-            url = f'{request.app.state.config.IMAGES_OPENAI_API_BASE_URL}/images/generations'
-            if request.app.state.config.IMAGES_OPENAI_API_VERSION:
-                url = f'{url}?api-version={request.app.state.config.IMAGES_OPENAI_API_VERSION}'
+            url = f"{request_context['url']}/images/generations"
+            if request_context['api_version']:
+                url = f"{url}?api-version={request_context['api_version']}"
 
             data = {
                 'model': model,
@@ -579,11 +695,7 @@ async def image_generations(
                     )
                     else {'response_format': 'b64_json'}
                 ),
-                **(
-                    {}
-                    if not request.app.state.config.IMAGES_OPENAI_API_PARAMS
-                    else request.app.state.config.IMAGES_OPENAI_API_PARAMS
-                ),
+                **request_context['api_params'],
             }
 
             session = await get_session()
@@ -591,6 +703,7 @@ async def image_generations(
                 url=url,
                 json=data,
                 headers=headers,
+                cookies=cookies,
                 ssl=AIOHTTP_CLIENT_SESSION_SSL,
             ) as r:
                 r.raise_for_status()
@@ -868,12 +981,9 @@ async def image_edits(
 
     try:
         if request.app.state.config.IMAGE_EDIT_ENGINE == 'openai':
-            headers = {
-                'Authorization': f'Bearer {request.app.state.config.IMAGES_EDIT_OPENAI_API_KEY}',
-            }
-
-            if ENABLE_FORWARD_USER_INFO_HEADERS:
-                headers = include_user_info_headers(headers, user)
+            request_context = await _get_image_openai_request_context(request, user, edit=True)
+            headers = {k: v for k, v in request_context['headers'].items() if k.lower() != 'content-type'}
+            cookies = request_context['cookies']
 
             data = {
                 'model': model,
@@ -889,6 +999,7 @@ async def image_edits(
                     )
                     else {'response_format': 'b64_json'}
                 ),
+                **request_context['api_params'],
             }
 
             files = []
@@ -899,8 +1010,8 @@ async def image_edits(
                     files.append(get_image_file_item(img, 'image[]'))
 
             url_search_params = ''
-            if request.app.state.config.IMAGES_EDIT_OPENAI_API_VERSION:
-                url_search_params += f'?api-version={request.app.state.config.IMAGES_EDIT_OPENAI_API_VERSION}'
+            if request_context['api_version']:
+                url_search_params += f"?api-version={request_context['api_version']}"
 
             # Build multipart form data for aiohttp
             form = aiohttp.FormData()
@@ -919,8 +1030,9 @@ async def image_edits(
 
             session = await get_session()
             async with session.post(
-                url=f'{request.app.state.config.IMAGES_EDIT_OPENAI_API_BASE_URL}/images/edits{url_search_params}',
+                url=f"{request_context['url']}/images/edits{url_search_params}",
                 headers=headers,
+                cookies=cookies,
                 data=form,
                 ssl=AIOHTTP_CLIENT_SESSION_SSL,
             ) as r:

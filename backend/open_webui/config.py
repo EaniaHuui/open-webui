@@ -3866,6 +3866,16 @@ IMAGES_OPENAI_API_PARAMS = PersistentConfig(
     'IMAGES_OPENAI_API_PARAMS', 'image_generation.openai.params', images_openai_params
 )
 
+IMAGE_OPENAI_USE_CONNECTION = PersistentConfig(
+    'IMAGE_OPENAI_USE_CONNECTION',
+    'image_generation.openai.use_connection',
+    os.environ.get('IMAGE_OPENAI_USE_CONNECTION', 'False').lower() == 'true',
+)
+IMAGE_OPENAI_CONNECTION_IDX = PersistentConfig(
+    'IMAGE_OPENAI_CONNECTION_IDX',
+    'image_generation.openai.connection_idx',
+    int(os.environ.get('IMAGE_OPENAI_CONNECTION_IDX', '-1')),
+)
 
 IMAGES_GEMINI_API_BASE_URL = PersistentConfig(
     'IMAGES_GEMINI_API_BASE_URL',
@@ -3919,6 +3929,16 @@ IMAGES_EDIT_OPENAI_API_KEY = PersistentConfig(
     'IMAGES_EDIT_OPENAI_API_KEY',
     'images.edit.openai.api_key',
     os.getenv('IMAGES_EDIT_OPENAI_API_KEY', OPENAI_API_KEY),
+)
+IMAGE_EDIT_OPENAI_USE_CONNECTION = PersistentConfig(
+    'IMAGE_EDIT_OPENAI_USE_CONNECTION',
+    'images.edit.openai.use_connection',
+    os.environ.get('IMAGE_EDIT_OPENAI_USE_CONNECTION', 'False').lower() == 'true',
+)
+IMAGE_EDIT_OPENAI_CONNECTION_IDX = PersistentConfig(
+    'IMAGE_EDIT_OPENAI_CONNECTION_IDX',
+    'images.edit.openai.connection_idx',
+    int(os.environ.get('IMAGE_EDIT_OPENAI_CONNECTION_IDX', '-1')),
 )
 
 IMAGES_EDIT_GEMINI_API_BASE_URL = PersistentConfig(
