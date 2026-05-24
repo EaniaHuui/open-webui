@@ -172,7 +172,7 @@ async def get_image_model(request):
                     request, request.app.state.config.IMAGE_OPENAI_CONNECTION_IDX
                 )
                 response = await get_models_request(request, url, key, config=api_config)
-                model_list = response if isinstance(response, list) else response.get('data', [])
+                model_list = response if isinstance(response, list) else (response.get('data', []) if response else [])
                 if model_list:
                     return model_list[0].get('id') or model_list[0].get('name') or 'dall-e-2'
             except Exception as e:
@@ -464,7 +464,7 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
                     request, request.app.state.config.IMAGE_OPENAI_CONNECTION_IDX
                 )
                 response = await get_models_request(request, url, key, user=user, config=api_config)
-                model_list = response if isinstance(response, list) else response.get('data', [])
+                model_list = response if isinstance(response, list) else (response.get('data', []) if response else [])
                 return [
                     {
                         'id': model.get('id', model.get('name', '')),
