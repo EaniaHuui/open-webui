@@ -85,6 +85,20 @@ class Sub2APIClient:
     async def create_api_key(self, token: str, name: str) -> dict:
         return await self._request('POST', '/api/v1/keys', token=token, json_body={'name': name})
 
+    async def refresh_token(self, refresh_token: str) -> dict:
+        """Refresh the access token using a refresh token."""
+        payload = await self._request(
+            'POST',
+            '/api/v1/auth/refresh',
+            json_body={'refresh_token': refresh_token},
+        )
+        if not payload.get('access_token'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Failed to refresh access token',
+            )
+        return payload
+
 
 class Sub2APIKeyCipher:
     def __init__(self):
@@ -145,13 +159,34 @@ async def resolve_sub2api_api_key(
 
     info = get_sub2api_info(user)
     access_token = info.get('access_token')
+    refresh_token_val = info.get('refresh_token')
     if not access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail='Sub2API account is not linked for this Open WebUI user.',
         )
 
-    keys = await client.list_api_keys(access_token)
+    try:
+        keys = await client.list_api_keys(access_token)
+    except HTTPException as e:
+        # If token expired, try to refresh
+        if e.status_code == 401 and refresh_token_val:
+            try:
+                new_tokens = await client.refresh_token(refresh_token_val)
+                await update_sub2api_info(
+                    user.id,
+                    {
+                        "access_token": new_tokens.get('access_token'),
+                        "refresh_token": new_tokens.get('refresh_token', refresh_token_val),
+                    },
+                    db=db,
+                )
+                access_token = new_tokens.get('access_token')
+                keys = await client.list_api_keys(access_token)
+            except Exception:
+                raise e
+        else:
+            raise e
     selected_key_id = info.get('selected_key_id')
 
     # Find the user-selected key, or fall back to first key, or create new

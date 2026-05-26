@@ -711,10 +711,12 @@ async def get_sub2api_keys(
         from open_webui.utils.sub2api import (
             Sub2APIClient,
             get_sub2api_info,
+            update_sub2api_info,
         )
 
         info = get_sub2api_info(user)
         access_token = info.get('access_token')
+        refresh_token_val = info.get('refresh_token')
 
         if not access_token:
             raise HTTPException(
@@ -727,7 +729,27 @@ async def get_sub2api_keys(
             timeout=request.app.state.config.SUB2API_REQUEST_TIMEOUT,
         )
 
-        keys = await client.list_api_keys(access_token)
+        try:
+            keys = await client.list_api_keys(access_token)
+        except HTTPException as e:
+            # If token expired, try to refresh
+            if e.status_code == 401 and refresh_token_val:
+                try:
+                    new_tokens = await client.refresh_token(refresh_token_val)
+                    await update_sub2api_info(
+                        user.id,
+                        {
+                            "access_token": new_tokens.get('access_token'),
+                            "refresh_token": new_tokens.get('refresh_token', refresh_token_val),
+                        },
+                        db=db,
+                    )
+                    access_token = new_tokens.get('access_token')
+                    keys = await client.list_api_keys(access_token)
+                except Exception:
+                    raise e
+            else:
+                raise e
 
         # Return keys with masked key hints, and include the currently selected key
         selected_key_id = info.get('selected_key_id')

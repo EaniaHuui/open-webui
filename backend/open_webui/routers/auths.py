@@ -681,8 +681,11 @@ async def signin(
                         request, email, str(uuid.uuid4()), display_name, db=db,
                     )
 
-                # Store Sub2API access token in user.info
-                await update_sub2api_info(user.id, {"access_token": access_token}, db=db)
+                # Store Sub2API tokens in user.info
+                await update_sub2api_info(user.id, {
+                    "access_token": access_token,
+                    "refresh_token": login_payload.get("refresh_token"),
+                }, db=db)
                 user = await Users.get_user_by_id(user.id, db=db)
             except HTTPException:
                 log.info(f"Sub2API login failed for {form_data.email}, falling back to local auth")
