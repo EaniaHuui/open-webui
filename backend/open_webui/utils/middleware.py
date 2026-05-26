@@ -1872,6 +1872,9 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
                     user,
                 )
 
+                if isinstance(res, JSONResponse):
+                    raise Exception('Image prompt generation returned an error response')
+
                 response = res['choices'][0]['message']['content']
 
                 try:
